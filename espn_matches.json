@@ -1,0 +1,291 @@
+{
+  "success": true,
+  "timestamp": "2026-07-29T09:07:12.465Z",
+  "total_matches": 4,
+  "data": [
+    {
+      "match_id": "match_1785315969496_477cyq",
+      "match_url": "https://www.cricinfo.com/ci/engine/match/index.html?view=calendar",
+      "series": {
+        "id": "",
+        "name": "",
+        "season": ""
+      },
+      "match": {
+        "number": "",
+        "format": "",
+        "status": "Completed",
+        "start_time": "",
+        "end_time": ""
+      },
+      "venue": {
+        "id": "",
+        "name": "",
+        "city": "",
+        "country": ""
+      },
+      "teams": {
+        "home": {
+          "id": "",
+          "name": "",
+          "short_name": "",
+          "logo": ""
+        },
+        "away": {
+          "id": "",
+          "name": "",
+          "short_name": "",
+          "logo": ""
+        }
+      },
+      "innings": [],
+      "result": {
+        "winner": "",
+        "margin": "",
+        "method": ""
+      },
+      "toss": {
+        "winner": "",
+        "decision": ""
+      },
+      "player_of_match": {
+        "name": "",
+        "team": "",
+        "image": "",
+        "profile_url": ""
+      },
+      "officials": {
+        "umpires": [],
+        "tv_umpire": "",
+        "reserve_umpire": "",
+        "match_referee": ""
+      },
+      "scorecard": {
+        "innings": []
+      },
+      "batting": [],
+      "bowling": [],
+      "fall_of_wickets": [],
+      "partnerships": [],
+      "match_info": {
+        "attendance": "",
+        "weather": "",
+        "pitch": ""
+      },
+      "commentary_url": ""
+    },
+    {
+      "match_id": "match_1785315992471_stqw05",
+      "match_url": "https://www.espncricinfo.com/series/21373/scorecard/1544610/tanzania-women-vs-uganda-women-12th-match-womens-t20-quadrangular-series-in-namibia-2026",
+      "series": {
+        "id": "",
+        "name": "",
+        "season": ""
+      },
+      "match": {
+        "number": "",
+        "format": "",
+        "status": "Completed",
+        "start_time": "",
+        "end_time": ""
+      },
+      "venue": {
+        "id": "",
+        "name": "",
+        "city": "",
+        "country": ""
+      },
+      "teams": {
+        "home": {
+          "id": "team_w",
+          "name": "W",
+          "short_name": "W",
+          "logo": ""
+        },
+        "away": {
+          "id": "team_uga",
+          "name": "UGA",
+          "short_name": "UGA",
+          "logo": ""
+        }
+      },
+      "innings": [],
+      "result": {
+        "winner": "",
+        "margin": "",
+        "method": ""
+      },
+      "toss": {
+        "winner": "",
+        "decision": ""
+      },
+      "player_of_match": {
+        "name": "",
+        "team": "",
+        "image": "",
+        "profile_url": ""
+      },
+      "officials": {
+        "umpires": [],
+        "tv_umpire": "",
+        "reserve_umpire": "",
+        "match_referee": ""
+      },
+      "scorecard": {
+        "innings": []
+      },
+      "batting": [],
+      "bowling": [],
+      "fall_of_wickets": [],
+      "partnerships": [],
+      "match_info": {
+        "attendance": "",
+        "weather": "",
+        "pitch": ""
+      },
+      "commentary_url": ""
+    },
+    {
+      "match_id": "match_1785316010396_r6drcb",
+      "match_url": "https://www.espncricinfo.com/series/23077/scorecard/1533128/guyana-amazon-warriors-vs-desert-vipers-4th-match-global-super-league-2026",
+      "series": {
+        "id": "",
+        "name": "",
+        "season": ""
+      },
+      "match": {
+        "number": "",
+        "format": "",
+        "status": "Completed",
+        "start_time": "",
+        "end_time": ""
+      },
+      "venue": {
+        "id": "",
+        "name": "",
+        "city": "",
+        "country": ""
+      },
+      "teams": {
+        "home": {
+          "id": "team_gaw",
+          "name": "GAW",
+          "short_name": "GAW",
+          "logo": ""
+        },
+        "away": {
+          "id": "team_dv_cricket_scorecard",
+          "name": "DV Cricket Scorecard",
+          "short_name": "DV ",
+          "logo": ""
+        }
+      },
+      "innings": [],
+      "result": {
+        "winner": "",
+        "margin": "",
+        "method": ""
+      },
+      "toss": {
+        "winner": "",
+        "decision": ""
+      },
+      "player_of_match": {
+        "name": "",
+        "team": "",
+        "image": "",
+        "profile_url": ""
+      },
+      "officials": {
+        "umpires": [],
+        "tv_umpire": "",
+        "reserve_umpire": "",
+        "match_referee": ""
+      },
+      "scorecard": {
+        "innings": []
+      },
+      "batting": [],
+      "bowling": [],
+      "fall_of_wickets": [],
+      "partnerships": [],
+      "match_info": {
+        "attendance": "",
+        "weather": "",
+        "pitch": ""
+      },
+      "commentary_url": ""
+    },
+    {
+      "match_id": "match_1785316028331_wdsq2b",
+      "match_url": "https://www.espncricinfo.com/series/11083/scorecard/1534730/leinster-lightning-vs-north-west-warriors-final-cricket-ireland-inter-provincial-limited-over-cup-2026",
+      "series": {
+        "id": "",
+        "name": "",
+        "season": ""
+      },
+      "match": {
+        "number": "",
+        "format": "",
+        "status": "Completed",
+        "start_time": "",
+        "end_time": ""
+      },
+      "venue": {
+        "id": "",
+        "name": "",
+        "city": "",
+        "country": ""
+      },
+      "teams": {
+        "home": {
+          "id": "team_lel",
+          "name": "LEL",
+          "short_name": "LEL",
+          "logo": ""
+        },
+        "away": {
+          "id": "team_nww_cricket_scorecard",
+          "name": "NWW Cricket Scorecard",
+          "short_name": "NWW",
+          "logo": ""
+        }
+      },
+      "innings": [],
+      "result": {
+        "winner": "",
+        "margin": "",
+        "method": ""
+      },
+      "toss": {
+        "winner": "",
+        "decision": ""
+      },
+      "player_of_match": {
+        "name": "",
+        "team": "",
+        "image": "",
+        "profile_url": ""
+      },
+      "officials": {
+        "umpires": [],
+        "tv_umpire": "",
+        "reserve_umpire": "",
+        "match_referee": ""
+      },
+      "scorecard": {
+        "innings": []
+      },
+      "batting": [],
+      "bowling": [],
+      "fall_of_wickets": [],
+      "partnerships": [],
+      "match_info": {
+        "attendance": "",
+        "weather": "",
+        "pitch": ""
+      },
+      "commentary_url": ""
+    }
+  ]
+}

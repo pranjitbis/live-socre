@@ -1,0 +1,4 @@
+make are the website like ai base using gemini api key like showing the rominctic image  with ai prompt image if user are click this image then open the copy btn  and showing the upload image btn if  user are upload  the image then generate are like same to same image 
+and copy btn are user for copy the prompt 
+
+and  use upload btn for the user are upload the user are image then generate image and use llm if this image are add tow photo then if user are include one photo then showing one photo is missing this are for seftie for dont wast the user time   

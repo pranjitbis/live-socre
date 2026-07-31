@@ -1,0 +1,19 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": [
+    "src/**/*.test.js",
+    "node_modules",
+    "logs",
+    "debug",
+    "*.log",
+    "*.html",
+    "*.png",
+    "*.jpg",
+    "*.jpeg"
+  ],
+  "exec": "node src/server.js",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

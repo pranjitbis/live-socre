@@ -1,0 +1,5103 @@
+// src/scraper/crex/LiveScraper.js
+const BaseCrexScraper = require('./BaseCrexScraper');
+const LIVE_SELECTORS = require('./selectors/liveSelectors');
+const logger = require('../../logger');
+const util = require('util');
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+
+// Deep logging function
+const deepLog = (label, data) => {
+  console.log(`\n${'═'.repeat(80)}`);
+  console.log(`📊 ${label}`);
+  console.log(`${'═'.repeat(80)}`);
+  console.log(util.inspect(data, {
+    depth: null,
+    colors: true,
+    compact: false,
+    maxArrayLength: null,
+    maxStringLength: null,
+    showHidden: false
+  }));
+  console.log(`${'═'.repeat(80)}\n`);
+};
+
+class LiveScraper extends BaseCrexScraper {
+  constructor() {
+    super();
+    this.selectors = LIVE_SELECTORS;
+    this.stats = {
+      discovered: 0,
+      detailed: 0,
+      merged: 0,
+      errors: 0,
+      weatherSuccess: 0,
+      weatherFailed: 0
+    };
+    
+    // Weather caches
+    this.geoCache = new Map();
+    this.weatherCache = new Map();
+    
+    // Weather code mapping
+    this.weatherCodeMap = {
+      0: { condition: 'Clear Sky', icon: '01d' },
+      1: { condition: 'Mainly Clear', icon: '02d' },
+      2: { condition: 'Partly Cloudy', icon: '03d' },
+      3: { condition: 'Cloudy', icon: '04d' },
+      45: { condition: 'Fog', icon: '50d' },
+      48: { condition: 'Depositing Fog', icon: '50d' },
+      51: { condition: 'Light Drizzle', icon: '09d' },
+      53: { condition: 'Moderate Drizzle', icon: '09d' },
+      55: { condition: 'Heavy Drizzle', icon: '09d' },
+      61: { condition: 'Light Rain', icon: '10d' },
+      63: { condition: 'Rain', icon: '10d' },
+      65: { condition: 'Heavy Rain', icon: '10d' },
+      71: { condition: 'Snow', icon: '13d' },
+      73: { condition: 'Snow', icon: '13d' },
+      75: { condition: 'Heavy Snow', icon: '13d' },
+      80: { condition: 'Rain Showers', icon: '09d' },
+      81: { condition: 'Rain Showers', icon: '09d' },
+      82: { condition: 'Heavy Rain Showers', icon: '09d' },
+      95: { condition: 'Thunderstorm', icon: '11d' },
+      96: { condition: 'Thunderstorm', icon: '11d' },
+      99: { condition: 'Thunderstorm', icon: '11d' }
+    };
+    
+    // Country mapping for team names
+    this.countryMap = {
+      'India': 'India',
+      'England': 'England',
+      'Australia': 'Australia',
+      'Pakistan': 'Pakistan',
+      'New Zealand': 'New Zealand',
+      'South Africa': 'South Africa',
+      'West Indies': 'West Indies',
+      'Sri Lanka': 'Sri Lanka',
+      'Bangladesh': 'Bangladesh',
+      'Afghanistan': 'Afghanistan',
+      'Zimbabwe': 'Zimbabwe',
+      'Ireland': 'Ireland',
+      'Nepal': 'Nepal',
+      'Namibia': 'Namibia',
+      'Guyana': 'Guyana'
+    };
+    
+    // Team abbreviation to country mapping
+    this.teamCountryMap = {
+      'PAK': 'Pakistan',
+      'WI': 'West Indies',
+      'IND': 'India',
+      'ENG': 'England',
+      'AUS': 'Australia',
+      'NZ': 'New Zealand',
+      'SA': 'South Africa',
+      'SL': 'Sri Lanka',
+      'BAN': 'Bangladesh',
+      'AFG': 'Afghanistan',
+      'ZIM': 'Zimbabwe',
+      'IRE': 'Ireland',
+      'NEP': 'Nepal',
+      'NAM': 'Namibia',
+      'GUY': 'Guyana',
+      'LANCS': 'England',
+      'LEIC': 'England',
+      'WOR': 'England',
+      'HAM': 'England',
+      'MDX': 'England',
+      'KT': 'England',
+      'LS': 'England',
+      'TR': 'England',
+      'DS': 'Sri Lanka',
+      'GG': 'Sri Lanka',
+      'Live PAK': 'Pakistan',
+      'LIVE PAK': 'Pakistan',
+      'Live IND': 'India',
+      'Live AUS': 'Australia'
+    };
+    
+    // Team ID mapping
+    this.teamIdMap = {
+      'India': 'team_ind',
+      'England': 'team_eng',
+      'Australia': 'team_aus',
+      'Pakistan': 'team_pak',
+      'New Zealand': 'team_nz',
+      'South Africa': 'team_sa',
+      'West Indies': 'team_wi',
+      'Sri Lanka': 'team_sl',
+      'Bangladesh': 'team_ban',
+      'Afghanistan': 'team_afg',
+      'Zimbabwe': 'team_zim',
+      'Ireland': 'team_ire',
+      'Nepal': 'team_nep',
+      'Namibia': 'team_nam',
+      'Maharani': 'team_maharani',
+      'Galle Gallants': 'team_galle',
+      'Dambulla Sixers': 'team_dambulla',
+      'Kandy Falcons': 'team_kandy',
+      'Jaffna Kings': 'team_jaffna',
+      'Colombo Kaps': 'team_colombo',
+      'Kandy Royals': 'team_kandy_royals',
+      'London Spirit': 'team_london_spirit',
+      'Manchester Super Giants': 'team_manchester',
+      'Southern Brave': 'team_southern_brave',
+      'Welsh Fire': 'team_welsh_fire',
+      'Birmingham Phoenix': 'team_birmingham',
+      'Trent Rockets': 'team_trent_rockets',
+      'Oval Invincibles': 'team_oval',
+      'Northern Superchargers': 'team_northern',
+      'Worcestershire': 'team_worcs',
+      'Derbyshire': 'team_derby',
+      'Lahore Qalandars': 'team_lahore',
+      'Perth Scorchers': 'team_perth',
+      'Guyana Amazon Warriors': 'team_guyana',
+      'San Francisco Unicorns': 'team_san_francisco',
+      'BP-W': 'team_bp_w',
+      'TR-W': 'team_tr_w',
+      'GLCS': 'team_glcs',
+      'SOM': 'team_som'
+    };
+  }
+
+  // ============================================================
+  // GET COUNTRY FROM TEAM NAME
+  // ============================================================
+  getCountryFromTeamName(teamName) {
+    if (!teamName) return null;
+    
+    // Clean the team name first
+    const cleanedName = this.cleanTeamName(teamName);
+    
+    if (this.teamCountryMap[cleanedName]) return this.teamCountryMap[cleanedName];
+    
+    for (const [key, value] of Object.entries(this.teamCountryMap)) {
+      if (cleanedName.includes(key) || key.includes(cleanedName)) {
+        return value;
+      }
+    }
+    
+    for (const [key, country] of Object.entries(this.countryMap)) {
+      if (cleanedName.includes(key) || key.includes(cleanedName)) {
+        return country;
+      }
+    }
+    
+    return null;
+  }
+
+  // ============================================================
+  // CLEAN TEAM NAME - Remove "Live", "LIVE", etc.
+  // ============================================================
+  cleanTeamName(name) {
+    if (!name) return '';
+    
+    let cleaned = name
+      .replace(/^(Live|LIVE)\s*/g, '')  // Remove "Live " or "LIVE " at start
+      .replace(/\s+(Live|LIVE)$/g, '')  // Remove " Live" or " LIVE" at end
+      .trim();
+    
+    return cleaned || name;
+  }
+
+  // ============================================================
+  // GET SHORT NAME FROM TEAM NAME
+  // ============================================================
+  getTeamShortName(name) {
+    if (!name) return '';
+    
+    const cleanedName = this.cleanTeamName(name);
+    
+    const map = {
+      'India': 'IND',
+      'England': 'ENG',
+      'Australia': 'AUS',
+      'Pakistan': 'PAK',
+      'New Zealand': 'NZ',
+      'South Africa': 'SA',
+      'West Indies': 'WI',
+      'Sri Lanka': 'SL',
+      'Bangladesh': 'BAN',
+      'Afghanistan': 'AFG',
+      'Zimbabwe': 'ZIM',
+      'Ireland': 'IRE',
+      'Nepal': 'NEP',
+      'Namibia': 'NAM',
+      'Galle Gallants': 'GAG',
+      'Dambulla Sixers': 'DAS',
+      'Kandy Falcons': 'KFS',
+      'Jaffna Kings': 'JKS',
+      'Colombo Kaps': 'CLK',
+      'Kandy Royals': 'KRL',
+      'London Spirit': 'LDN',
+      'Manchester Super Giants': 'MSG',
+      'Southern Brave': 'SOU',
+      'Welsh Fire': 'WEF',
+      'Birmingham Phoenix': 'BIR',
+      'Trent Rockets': 'TRE',
+      'Oval Invincibles': 'OVAL',
+      'Northern Superchargers': 'NOR',
+      'Worcestershire': 'WORCS',
+      'Derbyshire': 'DERBY',
+      'Lahore Qalandars': 'LQ',
+      'Perth Scorchers': 'PS',
+      'Guyana Amazon Warriors': 'GAW',
+      'San Francisco Unicorns': 'SFU',
+      'BP-W': 'BPW',
+      'TR-W': 'TRW',
+      'GLCS': 'GLC',
+      'SOM': 'SOM',
+      'PAK': 'PAK',
+      'WI': 'WI',
+      'IND': 'IND',
+      'ENG': 'ENG',
+      'AUS': 'AUS',
+      'NZ': 'NZ'
+    };
+    
+    return map[cleanedName] || cleanedName.substring(0, 3).toUpperCase();
+  }
+
+  // ============================================================
+  // DETECT MATCH FORMAT
+  // ============================================================
+  detectMatchFormat(text) {
+    if (!text) return 'T20';
+    
+    const lower = text.toLowerCase();
+    
+    if (lower.includes('test')) return 'Test';
+    if (lower.includes('odi')) return 'ODI';
+    if (lower.includes('the hundred') || lower.includes('100b')) return 'The Hundred';
+    if (lower.includes('t10')) return 'T10';
+    if (lower.includes('first class') || lower.includes('first-class')) return 'First Class';
+    if (lower.includes('list a')) return 'List A';
+    if (lower.includes('t20')) return 'T20';
+    
+    // Check for format indicators in match number
+    if (text.match(/\d+(?:st|nd|rd|th)\s+(?:TEST|ODI|T20|T10)/i)) {
+      const match = text.match(/(TEST|ODI|T20|T10)/i);
+      if (match) return match[1].toUpperCase();
+    }
+    
+    return 'T20';
+  }
+
+  // ============================================================
+  // BUILD LOCATION CANDIDATES
+  // ============================================================
+  buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
+    const candidates = new Set();
+    
+    if (venue && venue !== 'TBD' && venue.length > 2) {
+      candidates.add(venue);
+      
+      const cleanedVenue = venue
+        .replace(/Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleanedVenue !== venue && cleanedVenue.length > 2) {
+        candidates.add(cleanedVenue);
+      }
+      
+      if (venue.includes(',')) {
+        const parts = venue.split(',').map(p => p.trim());
+        parts.forEach(part => {
+          if (part.length > 2) {
+            candidates.add(part);
+          }
+        });
+      }
+      
+      const cityMatch = venue.match(/,?\s*([A-Za-z\s]+)$/);
+      if (cityMatch && cityMatch[1] && cityMatch[1].length > 2) {
+        candidates.add(cityMatch[1].trim());
+      }
+    }
+    
+    if (matchUrl) {
+      const urlParts = matchUrl.split('/');
+      for (const part of urlParts) {
+        const decoded = decodeURIComponent(part).replace(/-/g, ' ');
+        for (const [country] of Object.entries(this.countryMap)) {
+          if (decoded.includes(country.toLowerCase()) || decoded.includes(country)) {
+            candidates.add(country);
+          }
+        }
+        const locationMatch = decoded.match(/(england|australia|india|pakistan|sri lanka|west indies|new zealand|south africa|bangladesh|afghanistan|zimbabwe|ireland|nepal|namibia|guyana)/i);
+        if (locationMatch) {
+          candidates.add(locationMatch[1]);
+        }
+      }
+    }
+    
+    if (series) {
+      for (const [country] of Object.entries(this.countryMap)) {
+        if (series.includes(country)) {
+          candidates.add(country);
+        }
+      }
+      
+      const countryPatterns = [
+        /(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)\s+(?:Tour|vs|in)/i,
+        /(?:Tour|vs|in)\s+(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)/i
+      ];
+      
+      for (const pattern of countryPatterns) {
+        const match = series.match(pattern);
+        if (match) {
+          const country = match[0].replace(/Tour|vs|in/gi, '').trim();
+          if (country && country.length > 2) {
+            candidates.add(country);
+          }
+        }
+      }
+      
+      const vsMatch = series.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+      if (vsMatch) {
+        const country1 = vsMatch[1].trim();
+        const country2 = vsMatch[2].trim();
+        if (country1 && country1.length > 2) candidates.add(country1);
+        if (country2 && country2.length > 2) candidates.add(country2);
+      }
+    }
+    
+    if (matchTitle) {
+      for (const [country] of Object.entries(this.countryMap)) {
+        if (matchTitle.includes(country)) {
+          candidates.add(country);
+        }
+      }
+    }
+    
+    if (team1Name) {
+      const cleaned1 = this.cleanTeamName(team1Name);
+      for (const [key, country] of Object.entries(this.countryMap)) {
+        if (cleaned1.includes(key) || key.includes(cleaned1)) {
+          candidates.add(country);
+        }
+      }
+      const teamCountry = this.getCountryFromTeamName(cleaned1);
+      if (teamCountry) candidates.add(teamCountry);
+    }
+    
+    if (team2Name) {
+      const cleaned2 = this.cleanTeamName(team2Name);
+      for (const [key, country] of Object.entries(this.countryMap)) {
+        if (cleaned2.includes(key) || key.includes(cleaned2)) {
+          candidates.add(country);
+        }
+      }
+      const teamCountry = this.getCountryFromTeamName(cleaned2);
+      if (teamCountry) candidates.add(teamCountry);
+    }
+    
+    const validCandidates = new Set();
+    for (const candidate of candidates) {
+      const trimmed = candidate.trim();
+      if (trimmed && trimmed !== 'TBD' && trimmed !== 'tbd' && trimmed.length > 2) {
+        validCandidates.add(trimmed);
+      }
+    }
+    
+    const venueCandidates = [];
+    const cityCandidates = [];
+    const seriesCandidates = [];
+    const countryCandidates = [];
+    
+    for (const candidate of validCandidates) {
+      const isCountry = Object.values(this.countryMap).some(c => 
+        candidate.toLowerCase() === c.toLowerCase() || 
+        candidate.includes(c)
+      );
+      
+      if (isCountry && candidate.length <= 20) {
+        countryCandidates.push(candidate);
+      } else if (candidate.includes(',')) {
+        venueCandidates.push(candidate);
+      } else if (candidate.match(/[A-Z][a-z]+\s+[A-Z][a-z]+/)) {
+        venueCandidates.push(candidate);
+      } else if (candidate.match(/[A-Z][a-z]+/)) {
+        cityCandidates.push(candidate);
+      } else {
+        seriesCandidates.push(candidate);
+      }
+    }
+    
+    const allCandidates = [
+      ...venueCandidates,
+      ...cityCandidates,
+      ...seriesCandidates,
+      ...countryCandidates
+    ];
+    
+    const seen = new Set();
+    const uniqueCandidates = [];
+    for (const candidate of allCandidates) {
+      const lower = candidate.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        uniqueCandidates.push(candidate);
+      }
+    }
+    
+    if (uniqueCandidates.length === 0) {
+      if (team1Name) {
+        const cleaned1 = this.cleanTeamName(team1Name);
+        const country = this.getCountryFromTeamName(cleaned1);
+        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
+      }
+      if (team2Name) {
+        const cleaned2 = this.cleanTeamName(team2Name);
+        const country = this.getCountryFromTeamName(cleaned2);
+        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
+      }
+    }
+    
+    return uniqueCandidates;
+  }
+
+  // ============================================================
+  // GET COORDINATES WITH CACHING
+  // ============================================================
+  async getCoordinates(location) {
+    const cacheKey = location.toLowerCase().trim();
+    
+    if (this.geoCache.has(cacheKey)) {
+      logger.debug(`    ✅ Coordinates from cache for: ${location}`);
+      return this.geoCache.get(cacheKey);
+    }
+
+    try {
+      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+      
+      const response = await axios.get(geocodeUrl, {
+        timeout: 10000
+      });
+      
+      if (response.data.results && response.data.results.length > 0) {
+        const result = response.data.results[0];
+        const coords = {
+          lat: result.latitude,
+          lon: result.longitude,
+          name: result.name,
+          country: result.country
+        };
+        this.geoCache.set(cacheKey, coords);
+        logger.debug(`    ✅ Geocoded "${location}" → ${result.name}, ${result.country}`);
+        return coords;
+      } else {
+        logger.debug(`    ⚠️ No results for location: "${location}"`);
+        return null;
+      }
+    } catch (error) {
+      logger.debug(`    ⚠️ Geocoding failed for "${location}": ${error.message}`);
+      return null;
+    }
+  }
+
+  // ============================================================
+  // GET WEATHER FOR VENUE
+  // ============================================================
+  async getWeatherForVenue(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
+    const candidates = this.buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl);
+    
+    if (candidates.length === 0) {
+      logger.warn(`    ❌ No location candidates found for weather`);
+      return null;
+    }
+
+    logger.info(`    🌤️ Weather requested with ${candidates.length} location candidates:`);
+    candidates.slice(0, 10).forEach((c, i) => {
+      logger.info(`       ${i + 1}. "${c}"`);
+    });
+    if (candidates.length > 10) {
+      logger.info(`       ... and ${candidates.length - 10} more`);
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+      const location = candidates[i];
+      logger.debug(`    🔍 Trying location ${i + 1}/${candidates.length}: "${location}"`);
+      
+      try {
+        const coords = await this.getCoordinates(location);
+        
+        if (!coords) {
+          logger.debug(`    ⚠️ No coordinates for "${location}", trying next`);
+          continue;
+        }
+
+        const { lat: latitude, lon: longitude } = coords;
+
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=auto`;
+        
+        const weatherResponse = await axios.get(weatherUrl, {
+          timeout: 10000
+        });
+
+        const data = weatherResponse.data;
+        
+        if (!data.current) {
+          logger.debug(`    ⚠️ No weather data for "${location}", trying next`);
+          continue;
+        }
+
+        const current = data.current;
+        const weatherCode = current.weather_code;
+        const weatherInfo = this.weatherCodeMap[weatherCode] || { condition: 'Unknown', icon: '01d' };
+        
+        let rainProbability = null;
+        if (data.daily && data.daily.precipitation_probability_max && data.daily.precipitation_probability_max.length > 0) {
+          rainProbability = data.daily.precipitation_probability_max[0];
+        }
+
+        const weather = {
+          temperature: current.temperature_2m || null,
+          feels_like: current.apparent_temperature || null,
+          humidity: current.relative_humidity_2m || null,
+          wind_speed: current.wind_speed_10m || null,
+          condition: weatherInfo.condition,
+          rain_probability: rainProbability,
+          weather_icon: weatherInfo.icon,
+          last_updated: new Date().toISOString()
+        };
+
+        this.stats.weatherSuccess++;
+        
+        logger.info(`    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`);
+        logger.info(`       (Original venue: "${venue || 'N/A'}", Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'})`);
+        return weather;
+
+      } catch (error) {
+        logger.debug(`    ❌ Weather API error for "${location}": ${error.message}`);
+        continue;
+      }
+    }
+
+    this.stats.weatherFailed++;
+    logger.warn(`    ❌ No valid weather location found after all ${candidates.length} retries.`);
+    logger.warn(`       Venue: "${venue || 'N/A'}"`);
+    logger.warn(`       Series: "${series || 'N/A'}"`);
+    logger.warn(`       Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'}`);
+    return null;
+  }
+
+  // ============================================================
+  // MAIN SCRAPE METHOD
+  // ============================================================
+  async scrapeLive() {
+    logger.info('🚀 Starting live matches scraper');
+
+    try {
+      await this.initializeBrowser();
+      
+      const discoveredMatches = await this.discoverLiveMatches();
+      this.stats.discovered = discoveredMatches.length;
+      
+      if (discoveredMatches.length === 0) {
+        logger.info('📢 No live matches currently in progress');
+        await this.closeBrowser();
+        const result = {
+          success: false,
+          timestamp: new Date().toISOString(),
+          data: []
+        };
+        deepLog('SCRAPER RESULT - No live matches found', result);
+        return result;
+      }
+
+      logger.info(`📋 Phase 1 complete: Discovered ${discoveredMatches.length} live matches`);
+      deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
+
+      const fullMatches = await this.extractLiveMatchDetails(discoveredMatches);
+      this.stats.detailed = fullMatches.length;
+
+      logger.info(`📋 Phase 2 complete: Extracted details for ${fullMatches.length} live matches`);
+
+      await this.closeBrowser();
+      this.logStatistics();
+
+      const result = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        data: fullMatches
+      };
+
+      deepLog('✅ FINAL SCRAPER RESULT - Complete JSON', result);
+      
+      if (fullMatches.length > 0) {
+        deepLog('📋 SAMPLE LIVE MATCH - First match in detail', fullMatches[0]);
+      }
+
+      return result;
+
+    } catch (error) {
+      logger.error(`❌ LiveScraper error: ${error.message}`);
+      await this.closeBrowser();
+      const result = {
+        success: false,
+        timestamp: new Date().toISOString(),
+        data: []
+      };
+      deepLog('❌ SCRAPER ERROR RESULT', result);
+      return result;
+    }
+  }
+
+  // ============================================================
+  // PHASE 1: DISCOVER LIVE MATCHES
+  // ============================================================
+  async discoverLiveMatches() {
+    logger.info('🔍 Phase 1: Discovering live matches...');
+
+    const url = this.selectors.PAGE_URL || 'https://crex.com/cricket-live-score';
+    
+    try {
+      await this.page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+
+      try {
+        await this.page.waitForSelector('.live-card, .live-score-card, .match-card, .team-innig', { 
+          timeout: 10000 
+        });
+        logger.info('✅ Found live match indicators on page');
+      } catch (e) {
+        logger.warn('⚠️ No live match indicators found, waiting for page to settle...');
+        await this.page.waitForTimeout(3000);
+      }
+
+      await this.page.waitForTimeout(3000);
+      
+      const debugDir = path.join(process.cwd(), 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      
+      try {
+        await this.page.screenshot({ path: path.join(debugDir, 'live-page-screenshot.png'), fullPage: true });
+        logger.info(`💾 Saved screenshot to debug/live-page-screenshot.png`);
+      } catch (e) {
+        logger.warn(`Could not save screenshot: ${e.message}`);
+      }
+
+    } catch (error) {
+      logger.error(`❌ Failed to load live matches page: ${error.message}`);
+      
+      try {
+        logger.info('🔄 Retrying with different wait strategy...');
+        await this.page.goto(url, {
+          waitUntil: 'load',
+          timeout: 30000
+        });
+        await this.page.waitForTimeout(5000);
+      } catch (retryError) {
+        logger.error(`❌ Retry failed: ${retryError.message}`);
+        return [];
+      }
+    }
+
+    try {
+      const pageHtml = await this.page.content();
+      const debugDir = path.join(process.cwd(), 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(debugDir, 'live-page.html'), pageHtml);
+      logger.info(`💾 Saved page HTML to debug/live-page.html for inspection`);
+    } catch (e) {
+      logger.warn(`Could not save HTML: ${e.message}`);
+    }
+
+    const selectors = [
+      '.live-card',
+      '.live-score-card',
+      '.match-card',
+      '.match-container',
+      '.team-result',
+      '.team-content',
+      '.teamProfile',
+      '.team-innig',
+      '.score-card',
+      '.match-item',
+      '.live-match-item',
+      '.match-row',
+      '.cricket-match-card',
+      '.match-card-container'
+    ];
+
+    let foundCards = [];
+
+    for (const selector of selectors) {
+      try {
+        const count = await this.page.locator(selector).count();
+        logger.info(`  🔍 Checking selector "${selector}": ${count} elements found`);
+        
+        if (count > 0) {
+          foundCards = await this.page.$$(selector);
+          logger.info(`✅ Found ${count} elements with selector: ${selector}`);
+          
+          if (foundCards.length > 0) {
+            try {
+              const firstCardHtml = await this.page.evaluate((el) => el.outerHTML, foundCards[0]);
+              const snippet = firstCardHtml.substring(0, 500) + '...';
+              logger.info(`📄 First card HTML snippet: ${snippet}`);
+              
+              const debugDir = path.join(process.cwd(), 'debug');
+              if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+              }
+              fs.writeFileSync(path.join(debugDir, 'first-card.html'), firstCardHtml);
+              logger.info(`💾 Saved first card HTML to debug/first-card.html`);
+            } catch (e) {
+              logger.warn(`Could not save first card HTML: ${e.message}`);
+            }
+          }
+          break;
+        }
+      } catch (error) {
+        logger.debug(`  ⚠️ Error with selector "${selector}": ${error.message}`);
+      }
+    }
+
+    if (foundCards.length === 0) {
+      logger.warn('❌ No live match cards found with any selector');
+      
+      try {
+        const liveLinks = await this.page.$$('a[href*="cricket-live-score"]');
+        if (liveLinks.length > 0) {
+          logger.info(`🔗 Found ${liveLinks.length} links to live matches`);
+          
+          const discoveredMatches = await this.processLiveLinks(liveLinks);
+          if (discoveredMatches.length > 0) {
+            return discoveredMatches;
+          }
+        }
+      } catch (e) {
+        logger.warn(`Error processing links: ${e.message}`);
+      }
+      
+      return [];
+    }
+
+    const discoveredMatches = await this.page.evaluate((cards) => {
+      const matches = [];
+      
+      const getText = (el) => {
+        if (!el) return '';
+        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+      };
+
+      const cleanText = (text) => {
+        if (!text) return '';
+        return text.replace(/\s+/g, ' ').trim();
+      };
+
+      const getTeamShortName = (name) => {
+        const map = {
+          'India': 'IND',
+          'England': 'ENG',
+          'Australia': 'AUS',
+          'Pakistan': 'PAK',
+          'New Zealand': 'NZ',
+          'South Africa': 'SA',
+          'West Indies': 'WI',
+          'Sri Lanka': 'SL',
+          'Bangladesh': 'BAN',
+          'Afghanistan': 'AFG',
+          'Zimbabwe': 'ZIM',
+          'Ireland': 'IRE',
+          'Nepal': 'NEP',
+          'Namibia': 'NAM',
+          'Galle Gallants': 'GAG',
+          'Dambulla Sixers': 'DAS',
+          'Kandy Falcons': 'KFS',
+          'Jaffna Kings': 'JKS',
+          'Colombo Kaps': 'CLK',
+          'Kandy Royals': 'KRL',
+          'London Spirit': 'LDN',
+          'Manchester Super Giants': 'MSG',
+          'Southern Brave': 'SOU',
+          'Welsh Fire': 'WEF',
+          'Birmingham Phoenix': 'BIR',
+          'Trent Rockets': 'TRE',
+          'Oval Invincibles': 'OVAL',
+          'Northern Superchargers': 'NOR',
+          'Worcestershire': 'WORCS',
+          'Derbyshire': 'DERBY',
+          'Lahore Qalandars': 'LQ',
+          'Perth Scorchers': 'PS',
+          'Guyana Amazon Warriors': 'GAW',
+          'San Francisco Unicorns': 'SFU',
+          'BP-W': 'BPW',
+          'TR-W': 'TRW',
+          'GLCS': 'GLC',
+          'SOM': 'SOM'
+        };
+        return map[name] || name.substring(0, 3).toUpperCase();
+      };
+
+      const getMatchUrl = (card) => {
+        const links = card.querySelectorAll('a[href*="cricket-live-score"]');
+        for (const link of links) {
+          const href = link.getAttribute('href');
+          if (href && href.includes('cricket-live-score')) {
+            if (href.startsWith('https://')) {
+              return href;
+            } else if (href.startsWith('/')) {
+              return `https://crex.com${href}`;
+            } else {
+              return `https://crex.com/${href}`;
+            }
+          }
+        }
+        return '';
+      };
+
+      cards.forEach((card) => {
+        const cardText = getText(card);
+        
+        if (cardText.includes('Advertisement') || 
+            cardText.includes('News') || 
+            cardText.includes('Video') || 
+            cardText.includes('Photo') ||
+            cardText.includes('Podcast')) {
+          return;
+        }
+
+        const matchUrl = getMatchUrl(card);
+        if (!matchUrl) return;
+
+        let team1Name = '';
+        let team2Name = '';
+
+        const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+        if (vsMatch) {
+          team1Name = cleanText(vsMatch[1]);
+          team2Name = cleanText(vsMatch[2]);
+        }
+
+        if (!team1Name || !team2Name) {
+          const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
+          const teamNames = [];
+          
+          for (const selector of teamSelectors) {
+            const elements = card.querySelectorAll(selector);
+            elements.forEach(el => {
+              let text = cleanText(getText(el));
+              // Remove "Live" prefix if present
+              text = text.replace(/^Live\s*/i, '');
+              if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
+                teamNames.push(text);
+              }
+            });
+            if (teamNames.length >= 2) break;
+          }
+
+          if (teamNames.length >= 2) {
+            team1Name = teamNames[0];
+            team2Name = teamNames[1];
+          }
+        }
+
+        const flags = [];
+        const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
+        flagImages.forEach(img => {
+          const src = img.getAttribute('src') || '';
+          if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
+            flags.push(src);
+          }
+        });
+
+        let team1Score = '';
+        let team1Wickets = '';
+        let team1Overs = '';
+        let team2Score = '';
+        let team2Wickets = '';
+        let team2Overs = '';
+
+        const scoreElements = card.querySelectorAll('.score, .team-score, .runs, .score-text, .match-score');
+        const oversElements = card.querySelectorAll('.overs, .over, .overs-text, .match-overs');
+        
+        if (scoreElements.length >= 2) {
+          const score1Text = cleanText(getText(scoreElements[0]));
+          const score2Text = cleanText(getText(scoreElements[1]));
+          
+          const score1Match = score1Text.match(/(\d+)[-/](\d+)/);
+          if (score1Match) {
+            team1Score = score1Match[1];
+            team1Wickets = score1Match[2];
+          }
+          
+          const score2Match = score2Text.match(/(\d+)[-/](\d+)/);
+          if (score2Match) {
+            team2Score = score2Match[1];
+            team2Wickets = score2Match[2];
+          }
+        }
+
+        if (oversElements.length >= 2) {
+          team1Overs = cleanText(getText(oversElements[0])).replace(/[()]/g, '');
+          team2Overs = cleanText(getText(oversElements[1])).replace(/[()]/g, '');
+        }
+
+        let series = '';
+        const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series'];
+        for (const selector of seriesSelectors) {
+          const el = card.querySelector(selector);
+          if (el) {
+            series = cleanText(getText(el));
+            break;
+          }
+        }
+
+        if (team1Name && team2Name) {
+          // Clean team names
+          const cleaned1 = team1Name.replace(/^Live\s*/i, '');
+          const cleaned2 = team2Name.replace(/^Live\s*/i, '');
+          
+          matches.push({
+            url: matchUrl,
+            status: 'LIVE',
+            team1: {
+              name: cleaned1,
+              short: getTeamShortName(cleaned1),
+              flag: flags[0] || '',
+              score: team1Score,
+              wickets: team1Wickets,
+              overs: team1Overs
+            },
+            team2: {
+              name: cleaned2,
+              short: getTeamShortName(cleaned2),
+              flag: flags[1] || '',
+              score: team2Score,
+              wickets: team2Wickets,
+              overs: team2Overs
+            },
+            series: series
+          });
+        }
+      });
+
+      return matches;
+    }, foundCards);
+
+    logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
+    
+    if (discoveredMatches.length > 0) {
+      discoveredMatches.forEach((match, index) => {
+        logger.info(`  ${index + 1}. ${match.team1.name} (${match.team1.score}/${match.team1.wickets}) vs ${match.team2.name} (${match.team2.score}/${match.team2.wickets}) - ${match.url}`);
+      });
+    }
+
+    deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
+    return discoveredMatches;
+  }
+
+  // ============================================================
+  // PROCESS LIVE LINKS (Fallback)
+  // ============================================================
+  async processLiveLinks(links) {
+    logger.info('🔍 Processing live links as fallback...');
+    
+    const matches = [];
+    
+    for (const link of links) {
+      try {
+        const href = await this.page.evaluate((el) => el.getAttribute('href'), link);
+        if (!href || !href.includes('cricket-live-score')) continue;
+        
+        let matchUrl = href;
+        if (href.startsWith('https://')) {
+          matchUrl = href;
+        } else if (href.startsWith('/')) {
+          matchUrl = `https://crex.com${href}`;
+        } else {
+          matchUrl = `https://crex.com/${href}`;
+        }
+        
+        const linkText = await this.page.evaluate((el) => {
+          return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+        }, link);
+        
+        let team1Name = '';
+        let team2Name = '';
+        
+        const vsMatch = linkText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+        if (vsMatch) {
+          team1Name = vsMatch[1].trim().replace(/^Live\s*/i, '');
+          team2Name = vsMatch[2].trim().replace(/^Live\s*/i, '');
+        }
+        
+        if (team1Name && team2Name) {
+          matches.push({
+            url: matchUrl,
+            status: 'LIVE',
+            team1: {
+              name: team1Name,
+              short: team1Name.substring(0, 3).toUpperCase(),
+              flag: '',
+              score: '',
+              wickets: '',
+              overs: ''
+            },
+            team2: {
+              name: team2Name,
+              short: team2Name.substring(0, 3).toUpperCase(),
+              flag: '',
+              score: '',
+              wickets: '',
+              overs: ''
+            },
+            series: ''
+          });
+        }
+      } catch (error) {
+        logger.debug(`Error processing link: ${error.message}`);
+      }
+    }
+    
+    return matches;
+  }
+
+  // ============================================================
+  // EXTRACT MATCH INFO (Toss, Venue, Start Time, Series)
+  // ============================================================
+  async extractMatchInfo(page) {
+    const info = {
+      toss: 'Not Started',
+      venue: 'TBD',
+      startTime: '',
+      series: '',
+      matchTitle: '',
+      format: 'T20'
+    };
+
+    try {
+      // Wait for match info to load
+      await page.waitForSelector('.match-info, .match-details, .match-header', { timeout: 5000 }).catch(() => {});
+      
+      // Try to find the match info container
+      const infoSelectors = [
+        '.match-info',
+        '.match-details',
+        '.match-header',
+        '.scorecard-header',
+        '.match-container'
+      ];
+      
+      let infoContainer = null;
+      for (const selector of infoSelectors) {
+        try {
+          const el = await page.$(selector);
+          if (el) {
+            infoContainer = el;
+            logger.debug(`   Found match info container: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (infoContainer) {
+        // Extract venue
+        const venueSelectors = ['.venue', '.match-venue', '.venue-name', '.location', '.stadium'];
+        for (const sel of venueSelectors) {
+          try {
+            const el = await infoContainer.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text && text.length > 3) {
+                info.venue = text;
+                logger.debug(`   Venue: ${info.venue}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Extract start time
+        const timeSelectors = ['.start-time', '.match-time', '.time', '.datetime', '.match-start'];
+        for (const sel of timeSelectors) {
+          try {
+            const el = await infoContainer.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text && text.length > 0) {
+                info.startTime = text;
+                logger.debug(`   Start Time: ${info.startTime}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Extract series
+        const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament'];
+        for (const sel of seriesSelectors) {
+          try {
+            const el = await infoContainer.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text && text.length > 0) {
+                info.series = text;
+                logger.debug(`   Series: ${info.series}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Extract match title
+        const titleSelectors = ['h1', '.match-title', '.title'];
+        for (const sel of titleSelectors) {
+          try {
+            const el = await infoContainer.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text && text.length > 0) {
+                info.matchTitle = text;
+                logger.debug(`   Match Title: ${info.matchTitle}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // ============================================================
+      // EXTRACT TOSS FROM .toss-wrap
+      // ============================================================
+      const tossSelectors = [
+        '.toss-wrap p',
+        '.toss-wrap',
+        '[class*="toss"] p',
+        '[class*="toss"]',
+        '.match-info .toss',
+        '.toss-info',
+        '.toss-detail'
+      ];
+
+      for (const selector of tossSelectors) {
+        try {
+          const elements = await page.$$(selector);
+          for (const el of elements) {
+            let text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text && text.length > 0 && text.includes('won the toss')) {
+              text = text.replace(/\s+/g, ' ').trim();
+              info.toss = text;
+              logger.debug(`   ✅ Toss: ${info.toss}`);
+              break;
+            }
+          }
+          if (info.toss !== 'Not Started') break;
+        } catch (e) {}
+      }
+
+      // If toss not found in containers, search page
+      if (info.toss === 'Not Started') {
+        try {
+          const bodyText = await page.evaluate(() => document.body.textContent);
+          const lines = bodyText.split('\n');
+          for (const line of lines) {
+            if (line.includes('won the toss')) {
+              const text = line.trim().replace(/\s+/g, ' ');
+              if (text.length < 200) {
+                info.toss = text;
+                logger.debug(`   ✅ Toss (fallback): ${info.toss}`);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // ============================================================
+      // DETECT FORMAT FROM TITLE AND SERIES
+      // ============================================================
+      const formatText = `${info.matchTitle} ${info.series}`.trim();
+      info.format = this.detectMatchFormat(formatText);
+      logger.info(`   Match format detected: ${info.format}`);
+
+    } catch (error) {
+      logger.debug(`   ⚠️ Error extracting match info: ${error.message}`);
+    }
+
+    return info;
+  }
+
+  // ============================================================
+  // EXTRACT CURRENT BATSMEN - CONTAINER SCOPED
+  // ============================================================
+  async extractCurrentBatsmen(page) {
+    const batsmen = [];
+    
+    try {
+      // Wait for batsman content to load
+      await page.waitForSelector('.player-card-wrapper, .playing-batsmen-wrapper, .player-profile', {
+        timeout: 5000
+      }).catch(() => {});
+      
+      // Find the batting section - look for the batting container
+      const battingSectionSelectors = [
+        '.batting-section',
+        '.batsmen-partnership',
+        '.playing-batsmen-wrapper',
+        '.batsmen-info-wrapper',
+        '.team-innig:first-child .player-info',
+        '.live-data .batsmen-info'
+      ];
+      
+      let battingSection = null;
+      for (const selector of battingSectionSelectors) {
+        try {
+          const el = await page.$(selector);
+          if (el) {
+            battingSection = el;
+            logger.debug(`   Found batting section with: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      // If no specific batting section, try to find player cards in the batting team area
+      if (!battingSection) {
+        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
+        if (teamInnings.length >= 2) {
+          battingSection = teamInnings[0]; // First team innings is batting
+          logger.debug(`   Using first team innings as batting section`);
+        }
+      }
+
+      if (!battingSection) {
+        logger.debug(`   ⚠️ No batting section found`);
+        return batsmen;
+      }
+
+      // Extract player cards only from the batting section
+      const cardSelectors = [
+        '.player-card-wrapper',
+        '.player-card',
+        '.player-profile',
+        '.batsman-item',
+        '.batsman'
+      ];
+      
+      let cards = [];
+      for (const selector of cardSelectors) {
+        try {
+          const found = await battingSection.$$(selector);
+          if (found && found.length > 0) {
+            cards = found;
+            logger.debug(`   Found ${cards.length} batsmen in batting section with: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (cards.length === 0) {
+        logger.debug(`   ⚠️ No batsmen cards found in batting section`);
+        return batsmen;
+      }
+
+      // Extract data from each card
+      for (let i = 0; i < cards.length && batsmen.length < 2; i++) {
+        const card = cards[i];
+        
+        try {
+          // Extract name
+          const nameSelectors = [
+            '.batsmen-name',
+            '.player-name',
+            '.playerName',
+            '.name',
+            '.p-name',
+            'a[href*="/player/"] p'
+          ];
+          
+          let name = '';
+          for (const nameSel of nameSelectors) {
+            try {
+              const nameEl = await card.$(nameSel);
+              if (nameEl) {
+                const text = await page.evaluate(el => el.textContent.trim(), nameEl);
+                if (text && text.length > 0 && text.length < 50) {
+                  name = text;
+                  logger.debug(`   Found batsman name: "${name}"`);
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (!name) {
+            logger.debug(`   ⚠️ No name found for batsman ${i + 1}`);
+            continue;
+          }
+
+          // Extract runs and balls
+          let runs = '';
+          let balls = '';
+          
+          const scoreSelectors = ['.batsmen-score', '.runs', '.score'];
+          for (const scoreSel of scoreSelectors) {
+            try {
+              const scoreEl = await card.$(scoreSel);
+              if (scoreEl) {
+                const scoreText = await page.evaluate(el => el.textContent.trim(), scoreEl);
+                if (scoreText) {
+                  const scoreMatch = scoreText.match(/(\d+)\s*\(\s*(\d+)\s*\)/);
+                  if (scoreMatch) {
+                    runs = scoreMatch[1];
+                    balls = scoreMatch[2];
+                    break;
+                  }
+                  const numMatch = scoreText.match(/(\d+)/);
+                  if (numMatch) {
+                    runs = numMatch[1];
+                    break;
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Extract image
+          let image = null;
+          const imgSelectors = ['.batsmen-image img', '.player-image img', 'img[src*="player"]'];
+          for (const imgSel of imgSelectors) {
+            try {
+              const imgEl = await card.$(imgSel);
+              if (imgEl) {
+                const src = await page.evaluate(el => el.getAttribute('src'), imgEl);
+                if (src && !src.includes('placeholder')) {
+                  image = src.startsWith('/') ? `https://crex.com${src}` : src;
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Extract profile URL
+          let profileUrl = null;
+          const profSelectors = ['a[href*="/player/"]', 'a[href*="player-profile"]'];
+          for (const profSel of profSelectors) {
+            try {
+              const profEl = await card.$(profSel);
+              if (profEl) {
+                const href = await page.evaluate(el => el.getAttribute('href'), profEl);
+                if (href) {
+                  profileUrl = href.startsWith('/') ? `https://crex.com${href}` : href;
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+
+          // ============================================================
+          // STRICKER DETECTION - Check for SVG with ce_highlight_ac2
+          // ============================================================
+          let is_striker = false;
+          
+          // Method 1: Check for .circle-strike-icon
+          try {
+            const strikeIcon = await card.$('.circle-strike-icon');
+            if (strikeIcon) {
+              is_striker = true;
+              logger.debug(`   ✅ Found strike icon class for ${name}`);
+            }
+          } catch (e) {}
+
+          // Method 2: Check for SVG with ce_highlight_ac2
+          if (!is_striker) {
+            try {
+              const svgs = await card.$$('svg');
+              for (const svg of svgs) {
+                const svgHtml = await page.evaluate(el => el.outerHTML, svg);
+                if (svgHtml && (svgHtml.includes('ce_highlight_ac2') || svgHtml.includes('highlight_ac2'))) {
+                  is_striker = true;
+                  logger.debug(`   ✅ Found BAT SVG icon for ${name}`);
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+
+          batsmen.push({
+            name: name,
+            runs: runs || null,
+            balls: balls || null,
+            image: image,
+            profile_url: profileUrl,
+            is_striker: is_striker
+          });
+
+          logger.debug(`   Batsman ${i + 1}: ${name} (${runs || 0} runs, ${balls || 0} balls, Striker: ${is_striker})`);
+
+        } catch (error) {
+          logger.debug(`   ❌ Error processing batsman ${i + 1}: ${error.message}`);
+        }
+      }
+
+      // Validate striker
+      if (batsmen.length > 0) {
+        const strikers = batsmen.filter(b => b.is_striker === true);
+        if (strikers.length === 0) {
+          logger.debug(`   ⚠️ No striker detected, falling back to first batsman`);
+          batsmen[0].is_striker = true;
+        } else if (strikers.length > 1) {
+          let foundFirst = false;
+          for (const batsman of batsmen) {
+            if (batsman.is_striker) {
+              if (!foundFirst) foundFirst = true;
+              else batsman.is_striker = false;
+            }
+          }
+        }
+        
+        const striker = batsmen.find(b => b.is_striker);
+        if (striker) {
+          logger.info(`   🏏 Current striker: ${striker.name} (${striker.runs || 0} runs, ${striker.balls || 0} balls)`);
+        }
+        logger.info(`   ✅ Extracted ${batsmen.length} batsmen`);
+      }
+
+    } catch (error) {
+      logger.debug(`   ❌ Error in extractCurrentBatsmen: ${error.message}`);
+    }
+
+    return batsmen;
+  }
+
+  // ============================================================
+  // EXTRACT CURRENT BOWLER - CONTAINER SCOPED
+  // ============================================================
+  async extractCurrentBowler(page) {
+    const bowler = {
+      name: '',
+      overs: '',
+      runs: null,
+      wickets: null
+    };
+    
+    try {
+      // Find the bowling section
+      const bowlingSectionSelectors = [
+        '.bowling-section',
+        '.bowling-card',
+        '.bowler-info',
+        '.current-bowler',
+        '.bowler-container',
+        '.team-innig:last-child .player-info',
+        '.live-data .bowling-info'
+      ];
+      
+      let bowlingSection = null;
+      for (const selector of bowlingSectionSelectors) {
+        try {
+          const el = await page.$(selector);
+          if (el) {
+            bowlingSection = el;
+            logger.debug(`   Found bowling section with: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      // If no specific bowling section, try to find player cards in the bowling team area
+      if (!bowlingSection) {
+        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
+        if (teamInnings.length >= 2) {
+          bowlingSection = teamInnings[1]; // Second team innings is bowling
+          logger.debug(`   Using second team innings as bowling section`);
+        }
+      }
+
+      if (!bowlingSection) {
+        logger.debug(`   ⚠️ No bowling section found`);
+        return bowler;
+      }
+
+      // Extract bowler card from bowling section
+      const cardSelectors = [
+        '.player-card-wrapper',
+        '.player-card',
+        '.player-profile'
+      ];
+      
+      let bowlerCard = null;
+      for (const selector of cardSelectors) {
+        try {
+          const cards = await bowlingSection.$$(selector);
+          if (cards && cards.length > 0) {
+            bowlerCard = cards[0]; // First card is the current bowler
+            logger.debug(`   Found bowler card with: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (!bowlerCard) {
+        logger.debug(`   ⚠️ No bowler card found in bowling section`);
+        return bowler;
+      }
+
+      // Extract name
+      const nameSelectors = [
+        '.batsmen-name',
+        '.player-name',
+        '.name',
+        '.bowler-name',
+        'a[href*="/player/"] p'
+      ];
+      
+      for (const nameSel of nameSelectors) {
+        try {
+          const nameEl = await bowlerCard.$(nameSel);
+          if (nameEl) {
+            const text = await page.evaluate(el => el.textContent.trim(), nameEl);
+            if (text && text.length > 0 && text.length < 50) {
+              bowler.name = text;
+              logger.debug(`   Bowler name: ${bowler.name}`);
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Extract bowling figures
+      const figSelectors = [
+        '.bowling-figures',
+        '.figures',
+        '.stats',
+        '.score'
+      ];
+      
+      for (const figSel of figSelectors) {
+        try {
+          const figEl = await bowlerCard.$(figSel);
+          if (figEl) {
+            const text = await page.evaluate(el => el.textContent.trim(), figEl);
+            if (text) {
+              const match = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
+              if (match) {
+                bowler.wickets = parseInt(match[1]);
+                bowler.runs = parseInt(match[2]);
+                bowler.overs = match[3];
+                logger.debug(`   Bowler figures: ${bowler.wickets}-${bowler.runs} (${bowler.overs})`);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Check for RED BALL SVG (ce_highlight_khayi)
+      try {
+        const svgs = await bowlerCard.$$('svg');
+        for (const svg of svgs) {
+          const svgHtml = await page.evaluate(el => el.outerHTML, svg);
+          if (svgHtml && (svgHtml.includes('ce_highlight_khayi') || svgHtml.includes('highlight_khayi'))) {
+            logger.debug(`   ✅ Found RED BALL SVG icon for ${bowler.name}`);
+            break;
+          }
+        }
+      } catch (e) {}
+
+      if (bowler.name) {
+        logger.info(`   🎯 Current bowler: ${bowler.name} (${bowler.wickets || 0}-${bowler.runs || 0}, ${bowler.overs || '0.0'})`);
+      }
+
+    } catch (error) {
+      logger.debug(`   ❌ Error in extractCurrentBowler: ${error.message}`);
+    }
+
+    return bowler;
+  }
+
+  // ============================================================
+  // EXTRACT SCOREBOARD - CONTAINER SCOPED
+  // ============================================================
+  async extractScoreboard(page) {
+    const scoreboard = {
+      batting_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
+      bowling_team: { name: '' },
+      target: null,
+      required_runs: null,
+      required_balls: null,
+      crr: null,
+      rrr: null,
+      current_ball: ''
+    };
+
+    try {
+      // Find the scoreboard section
+      const scoreboardSelectors = [
+        '.scoreboard',
+        '.score-card',
+        '.live-scoreboard',
+        '.match-scoreboard'
+      ];
+      
+      let scoreboardSection = null;
+      for (const selector of scoreboardSelectors) {
+        try {
+          const el = await page.$(selector);
+          if (el) {
+            scoreboardSection = el;
+            logger.debug(`   Found scoreboard section with: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (!scoreboardSection) {
+        // Fallback to team innings
+        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
+        if (teamInnings.length >= 2) {
+          scoreboardSection = teamInnings[0];
+          logger.debug(`   Using team innings as scoreboard section`);
+        }
+      }
+
+      if (!scoreboardSection) {
+        logger.debug(`   ⚠️ No scoreboard section found`);
+        return scoreboard;
+      }
+
+      // Extract batting team name
+      const nameSelectors = ['.team-name', '.name', '.team-title'];
+      for (const sel of nameSelectors) {
+        try {
+          const el = await scoreboardSection.$(sel);
+          if (el) {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text) {
+              scoreboard.batting_team.name = text;
+              logger.debug(`   Batting team: ${text}`);
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Extract score and overs
+      const runsContainer = await scoreboardSection.$('.runs, .score, .team-score');
+      if (runsContainer) {
+        const spans = await runsContainer.$$('span');
+        const spanTexts = [];
+        for (const span of spans) {
+          const text = await page.evaluate(el => el.textContent.trim(), span);
+          if (text) spanTexts.push(text);
+        }
+
+        // First span: Score
+        if (spanTexts.length > 0) {
+          const scoreText = spanTexts[0];
+          const scoreMatch = scoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
+          if (scoreMatch) {
+            scoreboard.batting_team.score = scoreText;
+            scoreboard.batting_team.runs = parseInt(scoreMatch[1]);
+            scoreboard.batting_team.wickets = parseInt(scoreMatch[2]);
+            logger.debug(`   Score: ${scoreText} (${scoreboard.batting_team.runs}-${scoreboard.batting_team.wickets})`);
+          } else {
+            const numMatch = scoreText.match(/(\d+)/);
+            if (numMatch) {
+              scoreboard.batting_team.score = scoreText;
+              scoreboard.batting_team.runs = parseInt(numMatch[1]);
+              logger.debug(`   Score (runs only): ${scoreText}`);
+            }
+          }
+        }
+
+        // Second span: Overs
+        if (spanTexts.length > 1) {
+          const oversText = spanTexts[1];
+          const overRegex = /^(\d+\.\d+|\d+b)$/i;
+          if (oversText && overRegex.test(oversText)) {
+            scoreboard.batting_team.overs = oversText;
+            scoreboard.current_ball = oversText;
+            logger.debug(`   Overs: ${oversText}`);
+            logger.debug(`   Current ball: ${oversText}`);
+          }
+        }
+      }
+
+      // Extract bowling team name
+      const bowlingTeamName = scoreboard.batting_team.name ? 
+        (await page.evaluate(() => {
+          const teams = document.querySelectorAll('.team-name, .name, .team-title');
+          for (const team of teams) {
+            const text = team.textContent.trim();
+            if (text && text !== document.querySelector('.team-name')?.textContent?.trim()) {
+              return text;
+            }
+          }
+          return '';
+        })) : '';
+      
+      if (bowlingTeamName) {
+        scoreboard.bowling_team.name = bowlingTeamName;
+        logger.debug(`   Bowling team: ${bowlingTeamName}`);
+      }
+
+      // Extract CRR, RRR, Target
+      const statsSelectors = {
+        crr: ['.crr', '.current-run-rate', '.run-rate'],
+        rrr: ['.rrr', '.required-run-rate', '.req-run-rate'],
+        target: ['.target', '.target-score']
+      };
+
+      for (const [key, selectors] of Object.entries(statsSelectors)) {
+        for (const sel of selectors) {
+          try {
+            const el = await page.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text) {
+                const numMatch = text.match(/(\d+\.?\d*)/);
+                if (numMatch) {
+                  if (key === 'target') {
+                    scoreboard.target = parseInt(numMatch[1]) || null;
+                  } else if (key === 'crr') {
+                    scoreboard.crr = parseFloat(numMatch[1]) || null;
+                  } else if (key === 'rrr') {
+                    scoreboard.rrr = parseFloat(numMatch[1]) || null;
+                  }
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      logger.info(`   📊 Scoreboard: ${scoreboard.batting_team.score || 'N/A'} (${scoreboard.batting_team.overs || 'N/A'})`);
+
+    } catch (error) {
+      logger.debug(`   ❌ Error in extractScoreboard: ${error.message}`);
+    }
+
+    return scoreboard;
+  }
+
+  // ============================================================
+  // EXTRACT OVERS TIMELINE
+  // ============================================================
+  async extractOversTimeline(page) {
+    const overs = [];
+    
+    try {
+      const containerSelectors = [
+        '.overs-timeline',
+        '.overs-slide-container',
+        '.overs-container',
+        '.timeline'
+      ];
+      
+      let container = null;
+      for (const sel of containerSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            container = el;
+            logger.debug(`   Found overs timeline container: ${sel}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (!container) {
+        logger.debug(`   ⚠️ No overs timeline found`);
+        return overs;
+      }
+
+      const slideSelectors = ['.overs-slide', '.content', '.over-item', '.over'];
+      for (const slideSel of slideSelectors) {
+        const slides = await container.$$(slideSel);
+        for (const slide of slides) {
+          try {
+            let overNumber = '';
+            
+            // Extract over number
+            const overSelectors = [
+              '.over-title',
+              '.over-number',
+              '.title',
+              '.header',
+              'h4'
+            ];
+            
+            for (const sel of overSelectors) {
+              try {
+                const el = await slide.$(sel);
+                if (el) {
+                  const text = await page.evaluate(el => el.textContent.trim(), el);
+                  if (text) {
+                    // Normal cricket: "Over 46"
+                    let match = text.match(/Over\s*(\d+)/i);
+                    if (match) {
+                      overNumber = match[1];
+                      break;
+                    }
+                    // The Hundred: "6th Five", "17th Five"
+                    match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
+                    if (match) {
+                      overNumber = `${match[1]}th Five`;
+                      break;
+                    }
+                    // Just a number
+                    if (text.match(/^\d+$/)) {
+                      overNumber = text;
+                      break;
+                    }
+                  }
+                }
+              } catch (e) {}
+            }
+
+            // Extract balls
+            const balls = [];
+            const ballElements = await slide.$$('.over-ball, .ball');
+            for (const ballEl of ballElements) {
+              const result = await page.evaluate(el => el.textContent.trim(), ballEl);
+              if (result) balls.push(result);
+            }
+
+            // Extract total
+            let total = '';
+            const totalSelectors = ['.total', '.over-total'];
+            for (const sel of totalSelectors) {
+              try {
+                const el = await slide.$(sel);
+                if (el) {
+                  const text = await page.evaluate(el => el.textContent.trim(), el);
+                  if (text) {
+                    total = text.replace(/^=\s*/, '').trim();
+                    break;
+                  }
+                }
+              } catch (e) {}
+            }
+
+            if (overNumber || balls.length > 0) {
+              const overData = {
+                over: overNumber || '',
+                balls: balls,
+                total: total || ''
+              };
+              overs.push(overData);
+            }
+          } catch (e) {}
+        }
+        
+        if (overs.length > 0) {
+          logger.debug(`   Found ${overs.length} overs`);
+          break;
+        }
+      }
+    } catch (error) {
+      logger.debug(`   ❌ Error in extractOversTimeline: ${error.message}`);
+    }
+
+    return overs;
+  }
+
+  // ============================================================
+  // EXTRACT COMMENTARY
+  // ============================================================
+  async extractCommentary(page) {
+    const commentary = [];
+    
+    try {
+      const containerSelectors = [
+        '.commentary-container',
+        '.commentary-section',
+        '.commentary-list',
+        '.live-commentary'
+      ];
+      
+      let container = null;
+      for (const sel of containerSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            container = el;
+            logger.debug(`   Found commentary container: ${sel}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (!container) {
+        logger.debug(`   ⚠️ No commentary found`);
+        return commentary;
+      }
+
+      const itemSelectors = ['.commentary-item', '.comment', '.ball-commentary'];
+      for (const itemSel of itemSelectors) {
+        const items = await container.$$(itemSel);
+        for (const item of items) {
+          try {
+            const ball = await this.extractTextFromSelectors(page, item, [
+              '.ball-number',
+              '.over-ball',
+              '.ball'
+            ]);
+            const result = await this.extractTextFromSelectors(page, item, [
+              '.result',
+              '.event',
+              '.ball-result'
+            ]);
+            const text = await this.extractTextFromSelectors(page, item, [
+              '.comment-text',
+              '.description',
+              '.comment'
+            ]);
+            
+            if (ball || text || result) {
+              commentary.push({
+                ball: ball || '',
+                result: result || '',
+                text: text || ''
+              });
+            }
+          } catch (e) {}
+        }
+        
+        if (commentary.length > 0) {
+          logger.debug(`   Found ${commentary.length} commentary items`);
+          break;
+        }
+      }
+    } catch (error) {
+      logger.debug(`   ❌ Error in extractCommentary: ${error.message}`);
+    }
+
+    return commentary;
+  }
+
+  // ============================================================
+  // EXTRACT PREDICTION
+  // ============================================================
+  async extractPrediction(page) {
+    const prediction = {
+      home_probability: null,
+      away_probability: null,
+      projected_scores: []
+    };
+    
+    try {
+      // Extract win probabilities
+      const probSelectors = ['.displayFlex', '.percentageScreenText', '[class*="percentage"]'];
+      let percentages = [];
+      
+      for (const sel of probSelectors) {
+        try {
+          const elements = await page.$$(sel);
+          for (const el of elements) {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text) {
+              const num = parseInt(text.replace('%', ''));
+              if (!isNaN(num) && num <= 100) {
+                percentages.push(num);
+              }
+            }
+          }
+          if (percentages.length >= 2) break;
+        } catch (e) {}
+      }
+
+      if (percentages.length >= 2) {
+        prediction.home_probability = percentages[0];
+        prediction.away_probability = percentages[1];
+        logger.debug(`   Win probability: ${prediction.home_probability}% vs ${prediction.away_probability}%`);
+      }
+
+      // Extract projected scores
+      try {
+        const projContainer = await page.$('.projected-scores, .score-projection');
+        if (projContainer) {
+          const rows = await projContainer.$$('.projection-row, .score-row, .row, tr');
+          for (const row of rows) {
+            const cells = await row.$$('td, .cell, span');
+            let runRate = null;
+            let score = null;
+            for (const cell of cells) {
+              const text = await page.evaluate(el => el.textContent.trim(), cell);
+              if (text) {
+                const rrMatch = text.match(/^(\d+\.\d+)$/);
+                if (rrMatch) runRate = parseFloat(rrMatch[1]);
+                const scoreMatch = text.match(/^(\d{2,4})$/);
+                if (scoreMatch) score = parseInt(scoreMatch[1]);
+              }
+            }
+            if (runRate !== null && score !== null) {
+              prediction.projected_scores.push({ run_rate: runRate, score: score });
+            }
+          }
+        }
+      } catch (e) {}
+
+    } catch (error) {
+      logger.debug(`   ⚠️ Error extracting prediction: ${error.message}`);
+    }
+
+    return prediction;
+  }
+
+  // ============================================================
+  // HELPER: EXTRACT TEXT FROM SELECTORS
+  // ============================================================
+  async extractTextFromSelectors(page, element, selectors) {
+    for (const selector of selectors) {
+      try {
+        const el = await element.$(selector);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) return text;
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  // ============================================================
+  // PHASE 2: EXTRACT LIVE MATCH DETAILS
+  // ============================================================
+  async extractLiveMatchDetails(discoveredMatches) {
+    logger.info('🔍 Phase 2: Extracting live match details...');
+    
+    const fullMatches = [];
+
+    for (let i = 0; i < discoveredMatches.length; i++) {
+      const discovered = discoveredMatches[i];
+      logger.info(`  📄 Processing live match ${i + 1}/${discoveredMatches.length}: ${discovered.url}`);
+
+      try {
+        await this.page.goto(discovered.url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+
+        await this.page.waitForTimeout(3000);
+
+        // Extract match info (toss, venue, start time, series, format)
+        const matchInfo = await this.extractMatchInfo(this.page);
+        
+        // Extract all match data using container-scoped methods
+        const scoreboard = await this.extractScoreboard(this.page);
+        const currentBatsmen = await this.extractCurrentBatsmen(this.page);
+        const currentBowler = await this.extractCurrentBowler(this.page);
+        const overs = await this.extractOversTimeline(this.page);
+        const commentary = await this.extractCommentary(this.page);
+        const prediction = await this.extractPrediction(this.page);
+        
+        // Get weather
+        let weather = null;
+        if (matchInfo.venue || matchInfo.series || discovered.team1.name || discovered.team2.name) {
+          logger.info(`    🌤️ Requesting weather for match:`);
+          logger.info(`       Venue: "${matchInfo.venue || 'TBD'}"`);
+          logger.info(`       Series: "${matchInfo.series || 'N/A'}"`);
+          logger.info(`       Teams: ${discovered.team1.name || 'N/A'} vs ${discovered.team2.name || 'N/A'}`);
+          
+          weather = await this.getWeatherForVenue(
+            matchInfo.venue,
+            matchInfo.series,
+            matchInfo.matchTitle,
+            discovered.team1.name,
+            discovered.team2.name,
+            discovered.url
+          );
+          
+          if (weather) {
+            logger.info(`    ✅ Weather obtained for this match`);
+          } else {
+            logger.warn(`    ❌ No weather available for this match`);
+          }
+        }
+
+        const matchData = {
+          match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          match_url: discovered.url,
+          series: {
+            id: `series_${Date.now()}`,
+            name: matchInfo.series || discovered.series || 'Unknown Series',
+            short_name: matchInfo.series ? matchInfo.series.substring(0, 20) : '',
+            season: new Date().getFullYear().toString()
+          },
+          match: {
+            number: matchInfo.matchTitle ? (matchInfo.matchTitle.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|TEST|ODI|T20|T10|100B))/i)?.[0] || 'Match') : 'Match',
+            format: matchInfo.format,
+            status: 'Live',
+            start_time: matchInfo.startTime || '',
+            current_innings: '',
+            current_ball: scoreboard.current_ball || ''
+          },
+          venue: {
+            id: `venue_${Date.now()}`,
+            name: matchInfo.venue || 'TBD'
+          },
+          teams: {
+            home: {
+              id: this.getTeamId(scoreboard.batting_team.name || discovered.team1.name),
+              name: scoreboard.batting_team.name || discovered.team1.name,
+              short_name: discovered.team1.short || this.getTeamShortName(discovered.team1.name),
+              logo: discovered.team1.flag || ''
+            },
+            away: {
+              id: this.getTeamId(scoreboard.bowling_team.name || discovered.team2.name),
+              name: scoreboard.bowling_team.name || discovered.team2.name,
+              short_name: discovered.team2.short || this.getTeamShortName(discovered.team2.name),
+              logo: discovered.team2.flag || ''
+            }
+          },
+          scoreboard: {
+            batting_team: {
+              name: scoreboard.batting_team.name || discovered.team1.name,
+              score: scoreboard.batting_team.score || discovered.team1.score || '',
+              runs: scoreboard.batting_team.runs,
+              wickets: scoreboard.batting_team.wickets,
+              overs: scoreboard.batting_team.overs || discovered.team1.overs || ''
+            },
+            bowling_team: {
+              name: scoreboard.bowling_team.name || discovered.team2.name
+            },
+            target: scoreboard.target,
+            required_runs: scoreboard.required_runs,
+            required_balls: scoreboard.required_balls,
+            crr: scoreboard.crr,
+            rrr: scoreboard.rrr,
+            current_ball: scoreboard.current_ball || ''
+          },
+          current_batsmen: currentBatsmen,
+          current_bowler: currentBowler,
+          overs: overs,
+          commentary: commentary,
+          prediction: prediction,
+          toss: {
+            status: matchInfo.toss || 'Not Started'
+          },
+          weather: weather || null,
+          countdown: null
+        };
+
+        fullMatches.push(matchData);
+        
+        logger.info(`    ✅ Live Match: ${matchData.teams.home.name} (${matchData.scoreboard.batting_team.score}) vs ${matchData.teams.away.name}`);
+        logger.info(`       Format: ${matchData.match.format}`);
+        logger.info(`       Venue: ${matchData.venue.name || 'N/A'}`);
+        logger.info(`       Series: ${matchData.series.name}`);
+        logger.info(`       Score: ${matchData.scoreboard.batting_team.score || 'N/A'}`);
+        logger.info(`       Runs: ${matchData.scoreboard.batting_team.runs || 'N/A'}`);
+        logger.info(`       Wickets: ${matchData.scoreboard.batting_team.wickets || 'N/A'}`);
+        logger.info(`       Overs: ${matchData.scoreboard.batting_team.overs || 'N/A'}`);
+        logger.info(`       Toss: ${matchData.toss.status}`);
+        logger.info(`       Batsmen: ${matchData.current_batsmen.length}`);
+        logger.info(`       Weather: ${weather ? `${weather.temperature}°C, ${weather.condition}` : 'Not Available'}`);
+
+        deepLog(`PHASE 2 - Live Match ${i + 1} Extracted Data`, matchData);
+
+        if (i < discoveredMatches.length - 1) {
+          await this.page.waitForTimeout(1000);
+        }
+
+      } catch (error) {
+        logger.error(`    ❌ Error processing live match ${i + 1}: ${error.message}`);
+        this.stats.errors++;
+        
+        const fallbackMatch = {
+          match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          match_url: discovered.url,
+          series: {
+            id: `series_${Date.now()}`,
+            name: discovered.series || 'Unknown Series',
+            short_name: '',
+            season: new Date().getFullYear().toString()
+          },
+          match: {
+            number: 'Match',
+            format: 'T20',
+            status: 'Live',
+            start_time: '',
+            current_innings: '',
+            current_ball: ''
+          },
+          venue: {
+            id: `venue_${Date.now()}`,
+            name: 'TBD'
+          },
+          teams: {
+            home: {
+              id: this.getTeamId(discovered.team1.name),
+              name: discovered.team1.name || 'Team 1',
+              short_name: discovered.team1.short || 'T1',
+              logo: discovered.team1.flag || ''
+            },
+            away: {
+              id: this.getTeamId(discovered.team2.name),
+              name: discovered.team2.name || 'Team 2',
+              short_name: discovered.team2.short || 'T2',
+              logo: discovered.team2.flag || ''
+            }
+          },
+          scoreboard: {
+            batting_team: { name: discovered.team1.name, score: discovered.team1.score || '', runs: null, wickets: null, overs: discovered.team1.overs || '' },
+            bowling_team: { name: discovered.team2.name },
+            target: null,
+            required_runs: null,
+            required_balls: null,
+            crr: null,
+            rrr: null,
+            current_ball: ''
+          },
+          current_batsmen: [],
+          current_bowler: { name: '', overs: '', runs: null, wickets: null },
+          overs: [],
+          commentary: [],
+          prediction: { home_probability: null, away_probability: null, projected_scores: [] },
+          toss: { status: 'Not Started' },
+          weather: null,
+          countdown: null
+        };
+        
+        fullMatches.push(fallbackMatch);
+        deepLog(`PHASE 2 - Live Match ${i + 1} FALLBACK Data`, fallbackMatch);
+      }
+    }
+
+    deepLog(`PHASE 2 - All ${fullMatches.length} live matches collected`, fullMatches);
+    return fullMatches;
+  }
+
+  // ============================================================
+  // GET TEAM ID FROM NAME
+  // ============================================================
+  getTeamId(teamName) {
+    if (!teamName) return `team_${Date.now()}`;
+    
+    const cleanedName = this.cleanTeamName(teamName);
+    
+    for (const [name, id] of Object.entries(this.teamIdMap)) {
+      if (cleanedName.includes(name) || name.includes(cleanedName)) {
+        return id;
+      }
+    }
+    
+    const cleanName = cleanedName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    return `team_${cleanName}`;
+  }
+
+  // ============================================================
+  // LOG STATISTICS
+  // ============================================================
+  logStatistics() {
+    logger.info(`📊 Live Scraper Statistics:`);
+    logger.info(`   Discovered: ${this.stats.discovered}`);
+    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
+    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
+    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
+    logger.info(`   Errors: ${this.stats.errors}`);
+    logger.info(`   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`);
+  }
+}
+
+module.exports = LiveScraper;
+
+
+
+node src/scraper/espn/run.js
+
+# Or run with a specific command
+node -e "const { LiveScraper } = require('./src/scraper/crex'); new PreviousScraper().scrapePreviousMatches().then(console.log).catch(console.error)"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// src/scraper/crex/LiveScraper.js
+const BaseCrexScraper = require('./BaseCrexScraper');
+const LIVE_SELECTORS = require('./selectors/liveSelectors');
+const logger = require('../../logger');
+const util = require('util');
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+
+// Deep logging function
+const deepLog = (label, data) => {
+  console.log(`\n${'═'.repeat(80)}`);
+  console.log(`📊 ${label}`);
+  console.log(`${'═'.repeat(80)}`);
+  console.log(util.inspect(data, {
+    depth: null,
+    colors: true,
+    compact: false,
+    maxArrayLength: null,
+    maxStringLength: null,
+    showHidden: false
+  }));
+  console.log(`${'═'.repeat(80)}\n`);
+};
+
+class LiveScraper extends BaseCrexScraper {
+  constructor() {
+    super();
+    this.selectors = LIVE_SELECTORS;
+    this.stats = {
+      discovered: 0,
+      detailed: 0,
+      merged: 0,
+      errors: 0,
+      weatherSuccess: 0,
+      weatherFailed: 0
+    };
+    
+    // Weather caches
+    this.geoCache = new Map();
+    this.weatherCache = new Map();
+    
+    // Weather code mapping
+    this.weatherCodeMap = {
+      0: { condition: 'Clear Sky', icon: '01d' },
+      1: { condition: 'Mainly Clear', icon: '02d' },
+      2: { condition: 'Partly Cloudy', icon: '03d' },
+      3: { condition: 'Cloudy', icon: '04d' },
+      45: { condition: 'Fog', icon: '50d' },
+      48: { condition: 'Depositing Fog', icon: '50d' },
+      51: { condition: 'Light Drizzle', icon: '09d' },
+      53: { condition: 'Moderate Drizzle', icon: '09d' },
+      55: { condition: 'Heavy Drizzle', icon: '09d' },
+      61: { condition: 'Light Rain', icon: '10d' },
+      63: { condition: 'Rain', icon: '10d' },
+      65: { condition: 'Heavy Rain', icon: '10d' },
+      71: { condition: 'Snow', icon: '13d' },
+      73: { condition: 'Snow', icon: '13d' },
+      75: { condition: 'Heavy Snow', icon: '13d' },
+      80: { condition: 'Rain Showers', icon: '09d' },
+      81: { condition: 'Rain Showers', icon: '09d' },
+      82: { condition: 'Heavy Rain Showers', icon: '09d' },
+      95: { condition: 'Thunderstorm', icon: '11d' },
+      96: { condition: 'Thunderstorm', icon: '11d' },
+      99: { condition: 'Thunderstorm', icon: '11d' }
+    };
+    
+    // Country mapping for team names
+    this.countryMap = {
+      'India': 'India',
+      'England': 'England',
+      'Australia': 'Australia',
+      'Pakistan': 'Pakistan',
+      'New Zealand': 'New Zealand',
+      'South Africa': 'South Africa',
+      'West Indies': 'West Indies',
+      'Sri Lanka': 'Sri Lanka',
+      'Bangladesh': 'Bangladesh',
+      'Afghanistan': 'Afghanistan',
+      'Zimbabwe': 'Zimbabwe',
+      'Ireland': 'Ireland',
+      'Nepal': 'Nepal',
+      'Namibia': 'Namibia',
+      'Guyana': 'Guyana'
+    };
+    
+    // Team abbreviation to country mapping
+    this.teamCountryMap = {
+      'PAK': 'Pakistan',
+      'WI': 'West Indies',
+      'IND': 'India',
+      'ENG': 'England',
+      'AUS': 'Australia',
+      'NZ': 'New Zealand',
+      'SA': 'South Africa',
+      'SL': 'Sri Lanka',
+      'BAN': 'Bangladesh',
+      'AFG': 'Afghanistan',
+      'ZIM': 'Zimbabwe',
+      'IRE': 'Ireland',
+      'NEP': 'Nepal',
+      'NAM': 'Namibia',
+      'GUY': 'Guyana',
+      'LANCS': 'England',
+      'LEIC': 'England',
+      'WOR': 'England',
+      'HAM': 'England',
+      'MDX': 'England',
+      'KT': 'England',
+      'LS': 'England',
+      'TR': 'England',
+      'DS': 'Sri Lanka',
+      'GG': 'Sri Lanka',
+      'Live PAK': 'Pakistan'
+    };
+    
+    // Team ID mapping
+    this.teamIdMap = {
+      'India': 'team_ind',
+      'England': 'team_eng',
+      'Australia': 'team_aus',
+      'Pakistan': 'team_pak',
+      'New Zealand': 'team_nz',
+      'South Africa': 'team_sa',
+      'West Indies': 'team_wi',
+      'Sri Lanka': 'team_sl',
+      'Bangladesh': 'team_ban',
+      'Afghanistan': 'team_afg',
+      'Zimbabwe': 'team_zim',
+      'Ireland': 'team_ire',
+      'Nepal': 'team_nep',
+      'Namibia': 'team_nam',
+      'Maharani': 'team_maharani',
+      'Galle Gallants': 'team_galle',
+      'Dambulla Sixers': 'team_dambulla',
+      'Kandy Falcons': 'team_kandy',
+      'Jaffna Kings': 'team_jaffna',
+      'Colombo Kaps': 'team_colombo',
+      'Kandy Royals': 'team_kandy_royals',
+      'London Spirit': 'team_london_spirit',
+      'Manchester Super Giants': 'team_manchester',
+      'Southern Brave': 'team_southern_brave',
+      'Welsh Fire': 'team_welsh_fire',
+      'Birmingham Phoenix': 'team_birmingham',
+      'Trent Rockets': 'team_trent_rockets',
+      'Oval Invincibles': 'team_oval',
+      'Northern Superchargers': 'team_northern',
+      'Worcestershire': 'team_worcs',
+      'Derbyshire': 'team_derby',
+      'Lahore Qalandars': 'team_lahore',
+      'Perth Scorchers': 'team_perth',
+      'Guyana Amazon Warriors': 'team_guyana',
+      'San Francisco Unicorns': 'team_san_francisco',
+      'BP-W': 'team_bp_w',
+      'TR-W': 'team_tr_w',
+      'GLCS': 'team_glcs',
+      'SOM': 'team_som'
+    };
+  }
+
+  // ============================================================
+  // GET COUNTRY FROM TEAM NAME
+  // ============================================================
+  getCountryFromTeamName(teamName) {
+    if (!teamName) return null;
+    
+    if (this.teamCountryMap[teamName]) return this.teamCountryMap[teamName];
+    
+    for (const [key, value] of Object.entries(this.teamCountryMap)) {
+      if (teamName.includes(key) || key.includes(teamName)) {
+        return value;
+      }
+    }
+    
+    for (const [key, country] of Object.entries(this.countryMap)) {
+      if (teamName.includes(key) || key.includes(teamName)) {
+        return country;
+      }
+    }
+    
+    return null;
+  }
+
+  // ============================================================
+  // BUILD LOCATION CANDIDATES
+  // ============================================================
+  buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
+    const candidates = new Set();
+    
+    if (venue && venue !== 'TBD' && venue.length > 2) {
+      candidates.add(venue);
+      
+      const cleanedVenue = venue
+        .replace(/Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleanedVenue !== venue && cleanedVenue.length > 2) {
+        candidates.add(cleanedVenue);
+      }
+      
+      if (venue.includes(',')) {
+        const parts = venue.split(',').map(p => p.trim());
+        parts.forEach(part => {
+          if (part.length > 2) {
+            candidates.add(part);
+          }
+        });
+      }
+      
+      const cityMatch = venue.match(/,?\s*([A-Za-z\s]+)$/);
+      if (cityMatch && cityMatch[1] && cityMatch[1].length > 2) {
+        candidates.add(cityMatch[1].trim());
+      }
+    }
+    
+    if (matchUrl) {
+      const urlParts = matchUrl.split('/');
+      for (const part of urlParts) {
+        const decoded = decodeURIComponent(part).replace(/-/g, ' ');
+        for (const [country] of Object.entries(this.countryMap)) {
+          if (decoded.includes(country.toLowerCase()) || decoded.includes(country)) {
+            candidates.add(country);
+          }
+        }
+        const locationMatch = decoded.match(/(england|australia|india|pakistan|sri lanka|west indies|new zealand|south africa|bangladesh|afghanistan|zimbabwe|ireland|nepal|namibia|guyana)/i);
+        if (locationMatch) {
+          candidates.add(locationMatch[1]);
+        }
+      }
+    }
+    
+    if (series) {
+      for (const [country] of Object.entries(this.countryMap)) {
+        if (series.includes(country)) {
+          candidates.add(country);
+        }
+      }
+      
+      const countryPatterns = [
+        /(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)\s+(?:Tour|vs|in)/i,
+        /(?:Tour|vs|in)\s+(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)/i
+      ];
+      
+      for (const pattern of countryPatterns) {
+        const match = series.match(pattern);
+        if (match) {
+          const country = match[0].replace(/Tour|vs|in/gi, '').trim();
+          if (country && country.length > 2) {
+            candidates.add(country);
+          }
+        }
+      }
+      
+      const vsMatch = series.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+      if (vsMatch) {
+        const country1 = vsMatch[1].trim();
+        const country2 = vsMatch[2].trim();
+        if (country1 && country1.length > 2) candidates.add(country1);
+        if (country2 && country2.length > 2) candidates.add(country2);
+      }
+    }
+    
+    if (matchTitle) {
+      for (const [country] of Object.entries(this.countryMap)) {
+        if (matchTitle.includes(country)) {
+          candidates.add(country);
+        }
+      }
+    }
+    
+    if (team1Name) {
+      for (const [key, country] of Object.entries(this.countryMap)) {
+        if (team1Name.includes(key) || key.includes(team1Name)) {
+          candidates.add(country);
+        }
+      }
+      const teamCountry = this.getCountryFromTeamName(team1Name);
+      if (teamCountry) candidates.add(teamCountry);
+    }
+    
+    if (team2Name) {
+      for (const [key, country] of Object.entries(this.countryMap)) {
+        if (team2Name.includes(key) || key.includes(team2Name)) {
+          candidates.add(country);
+        }
+      }
+      const teamCountry = this.getCountryFromTeamName(team2Name);
+      if (teamCountry) candidates.add(teamCountry);
+    }
+    
+    if (team1Name && team1Name.length <= 3) {
+      const country = this.teamCountryMap[team1Name.toUpperCase()];
+      if (country) candidates.add(country);
+    }
+    
+    if (team2Name && team2Name.length <= 3) {
+      const country = this.teamCountryMap[team2Name.toUpperCase()];
+      if (country) candidates.add(country);
+    }
+    
+    const validCandidates = new Set();
+    for (const candidate of candidates) {
+      const trimmed = candidate.trim();
+      if (trimmed && trimmed !== 'TBD' && trimmed !== 'tbd' && trimmed.length > 2) {
+        validCandidates.add(trimmed);
+      }
+    }
+    
+    const prioritized = [];
+    const venueCandidates = [];
+    const cityCandidates = [];
+    const seriesCandidates = [];
+    const countryCandidates = [];
+    
+    for (const candidate of validCandidates) {
+      const isCountry = Object.values(this.countryMap).some(c => 
+        candidate.toLowerCase() === c.toLowerCase() || 
+        candidate.includes(c)
+      );
+      
+      if (isCountry && candidate.length <= 20) {
+        countryCandidates.push(candidate);
+      } else if (candidate.includes(',')) {
+        venueCandidates.push(candidate);
+      } else if (candidate.match(/[A-Z][a-z]+\s+[A-Z][a-z]+/)) {
+        venueCandidates.push(candidate);
+      } else if (candidate.match(/[A-Z][a-z]+/)) {
+        cityCandidates.push(candidate);
+      } else {
+        seriesCandidates.push(candidate);
+      }
+    }
+    
+    const allCandidates = [
+      ...venueCandidates,
+      ...cityCandidates,
+      ...seriesCandidates,
+      ...countryCandidates
+    ];
+    
+    const seen = new Set();
+    const uniqueCandidates = [];
+    for (const candidate of allCandidates) {
+      const lower = candidate.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        uniqueCandidates.push(candidate);
+      }
+    }
+    
+    if (uniqueCandidates.length === 0) {
+      if (team1Name) {
+        const country = this.getCountryFromTeamName(team1Name);
+        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
+      }
+      if (team2Name) {
+        const country = this.getCountryFromTeamName(team2Name);
+        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
+      }
+    }
+    
+    return uniqueCandidates;
+  }
+
+  // ============================================================
+  // GET COORDINATES WITH CACHING
+  // ============================================================
+  async getCoordinates(location) {
+    const cacheKey = location.toLowerCase().trim();
+    
+    if (this.geoCache.has(cacheKey)) {
+      logger.debug(`    ✅ Coordinates from cache for: ${location}`);
+      return this.geoCache.get(cacheKey);
+    }
+
+    try {
+      const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+      
+      const response = await axios.get(geocodeUrl, {
+        timeout: 10000
+      });
+      
+      if (response.data.results && response.data.results.length > 0) {
+        const result = response.data.results[0];
+        const coords = {
+          lat: result.latitude,
+          lon: result.longitude,
+          name: result.name,
+          country: result.country
+        };
+        this.geoCache.set(cacheKey, coords);
+        logger.debug(`    ✅ Geocoded "${location}" → ${result.name}, ${result.country}`);
+        return coords;
+      } else {
+        logger.debug(`    ⚠️ No results for location: "${location}"`);
+        return null;
+      }
+    } catch (error) {
+      logger.debug(`    ⚠️ Geocoding failed for "${location}": ${error.message}`);
+      return null;
+    }
+  }
+
+  // ============================================================
+  // GET WEATHER FOR VENUE
+  // ============================================================
+  async getWeatherForVenue(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
+    const candidates = this.buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl);
+    
+    if (candidates.length === 0) {
+      logger.warn(`    ❌ No location candidates found for weather`);
+      return null;
+    }
+
+    logger.info(`    🌤️ Weather requested with ${candidates.length} location candidates:`);
+    candidates.slice(0, 10).forEach((c, i) => {
+      logger.info(`       ${i + 1}. "${c}"`);
+    });
+    if (candidates.length > 10) {
+      logger.info(`       ... and ${candidates.length - 10} more`);
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+      const location = candidates[i];
+      logger.debug(`    🔍 Trying location ${i + 1}/${candidates.length}: "${location}"`);
+      
+      try {
+        const coords = await this.getCoordinates(location);
+        
+        if (!coords) {
+          logger.debug(`    ⚠️ No coordinates for "${location}", trying next`);
+          continue;
+        }
+
+        const { lat: latitude, lon: longitude } = coords;
+
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=auto`;
+        
+        const weatherResponse = await axios.get(weatherUrl, {
+          timeout: 10000
+        });
+
+        const data = weatherResponse.data;
+        
+        if (!data.current) {
+          logger.debug(`    ⚠️ No weather data for "${location}", trying next`);
+          continue;
+        }
+
+        const current = data.current;
+        const weatherCode = current.weather_code;
+        const weatherInfo = this.weatherCodeMap[weatherCode] || { condition: 'Unknown', icon: '01d' };
+        
+        let rainProbability = null;
+        if (data.daily && data.daily.precipitation_probability_max && data.daily.precipitation_probability_max.length > 0) {
+          rainProbability = data.daily.precipitation_probability_max[0];
+        }
+
+        const weather = {
+          temperature: current.temperature_2m || null,
+          feels_like: current.apparent_temperature || null,
+          humidity: current.relative_humidity_2m || null,
+          wind_speed: current.wind_speed_10m || null,
+          condition: weatherInfo.condition,
+          rain_probability: rainProbability,
+          weather_icon: weatherInfo.icon,
+          last_updated: new Date().toISOString()
+        };
+
+        this.stats.weatherSuccess++;
+        
+        logger.info(`    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`);
+        logger.info(`       (Original venue: "${venue || 'N/A'}", Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'})`);
+        return weather;
+
+      } catch (error) {
+        logger.debug(`    ❌ Weather API error for "${location}": ${error.message}`);
+        continue;
+      }
+    }
+
+    this.stats.weatherFailed++;
+    logger.warn(`    ❌ No valid weather location found after all ${candidates.length} retries.`);
+    logger.warn(`       Venue: "${venue || 'N/A'}"`);
+    logger.warn(`       Series: "${series || 'N/A'}"`);
+    logger.warn(`       Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'}`);
+    return null;
+  }
+
+  // ============================================================
+  // MAIN SCRAPE METHOD
+  // ============================================================
+  async scrapeLive() {
+    logger.info('🚀 Starting live matches scraper');
+
+    try {
+      await this.initializeBrowser();
+      
+      const discoveredMatches = await this.discoverLiveMatches();
+      this.stats.discovered = discoveredMatches.length;
+      
+      if (discoveredMatches.length === 0) {
+        logger.info('📢 No live matches currently in progress');
+        await this.closeBrowser();
+        const result = {
+          success: false,
+          timestamp: new Date().toISOString(),
+          data: []
+        };
+        deepLog('SCRAPER RESULT - No live matches found', result);
+        return result;
+      }
+
+      logger.info(`📋 Phase 1 complete: Discovered ${discoveredMatches.length} live matches`);
+      deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
+
+      const fullMatches = await this.extractLiveMatchDetails(discoveredMatches);
+      this.stats.detailed = fullMatches.length;
+
+      logger.info(`📋 Phase 2 complete: Extracted details for ${fullMatches.length} live matches`);
+
+      await this.closeBrowser();
+      this.logStatistics();
+
+      const result = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        data: fullMatches
+      };
+
+      deepLog('✅ FINAL SCRAPER RESULT - Complete JSON', result);
+      
+      if (fullMatches.length > 0) {
+        deepLog('📋 SAMPLE LIVE MATCH - First match in detail', fullMatches[0]);
+      }
+
+      return result;
+
+    } catch (error) {
+      logger.error(`❌ LiveScraper error: ${error.message}`);
+      await this.closeBrowser();
+      const result = {
+        success: false,
+        timestamp: new Date().toISOString(),
+        data: []
+      };
+      deepLog('❌ SCRAPER ERROR RESULT', result);
+      return result;
+    }
+  }
+
+  // ============================================================
+  // PHASE 1: DISCOVER LIVE MATCHES
+  // ============================================================
+  async discoverLiveMatches() {
+    logger.info('🔍 Phase 1: Discovering live matches...');
+
+    const url = this.selectors.PAGE_URL || 'https://crex.com/cricket-live-score';
+    
+    try {
+      await this.page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+
+      try {
+        await this.page.waitForSelector('.live-card, .live-score-card, .match-card, .team-innig', { 
+          timeout: 10000 
+        });
+        logger.info('✅ Found live match indicators on page');
+      } catch (e) {
+        logger.warn('⚠️ No live match indicators found, waiting for page to settle...');
+        await this.page.waitForTimeout(3000);
+      }
+
+      await this.page.waitForTimeout(3000);
+      
+      const debugDir = path.join(process.cwd(), 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      
+      try {
+        await this.page.screenshot({ path: path.join(debugDir, 'live-page-screenshot.png'), fullPage: true });
+        logger.info(`💾 Saved screenshot to debug/live-page-screenshot.png`);
+      } catch (e) {
+        logger.warn(`Could not save screenshot: ${e.message}`);
+      }
+
+    } catch (error) {
+      logger.error(`❌ Failed to load live matches page: ${error.message}`);
+      
+      try {
+        logger.info('🔄 Retrying with different wait strategy...');
+        await this.page.goto(url, {
+          waitUntil: 'load',
+          timeout: 30000
+        });
+        await this.page.waitForTimeout(5000);
+      } catch (retryError) {
+        logger.error(`❌ Retry failed: ${retryError.message}`);
+        return [];
+      }
+    }
+
+    try {
+      const pageHtml = await this.page.content();
+      const debugDir = path.join(process.cwd(), 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(debugDir, 'live-page.html'), pageHtml);
+      logger.info(`💾 Saved page HTML to debug/live-page.html for inspection`);
+    } catch (e) {
+      logger.warn(`Could not save HTML: ${e.message}`);
+    }
+
+    const selectors = [
+      '.live-card',
+      '.live-score-card',
+      '.match-card',
+      '.match-container',
+      '.team-result',
+      '.team-content',
+      '.teamProfile',
+      '.team-innig',
+      '.score-card',
+      '.match-item',
+      '.live-match-item',
+      '.match-row',
+      '.cricket-match-card',
+      '.match-card-container'
+    ];
+
+    let foundCards = [];
+
+    for (const selector of selectors) {
+      try {
+        const count = await this.page.locator(selector).count();
+        logger.info(`  🔍 Checking selector "${selector}": ${count} elements found`);
+        
+        if (count > 0) {
+          foundCards = await this.page.$$(selector);
+          logger.info(`✅ Found ${count} elements with selector: ${selector}`);
+          
+          if (foundCards.length > 0) {
+            try {
+              const firstCardHtml = await this.page.evaluate((el) => el.outerHTML, foundCards[0]);
+              const snippet = firstCardHtml.substring(0, 500) + '...';
+              logger.info(`📄 First card HTML snippet: ${snippet}`);
+              
+              const debugDir = path.join(process.cwd(), 'debug');
+              if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+              }
+              fs.writeFileSync(path.join(debugDir, 'first-card.html'), firstCardHtml);
+              logger.info(`💾 Saved first card HTML to debug/first-card.html`);
+            } catch (e) {
+              logger.warn(`Could not save first card HTML: ${e.message}`);
+            }
+          }
+          break;
+        }
+      } catch (error) {
+        logger.debug(`  ⚠️ Error with selector "${selector}": ${error.message}`);
+      }
+    }
+
+    if (foundCards.length === 0) {
+      logger.warn('❌ No live match cards found with any selector');
+      
+      try {
+        const liveLinks = await this.page.$$('a[href*="cricket-live-score"]');
+        if (liveLinks.length > 0) {
+          logger.info(`🔗 Found ${liveLinks.length} links to live matches`);
+          
+          const discoveredMatches = await this.processLiveLinks(liveLinks);
+          if (discoveredMatches.length > 0) {
+            return discoveredMatches;
+          }
+        }
+      } catch (e) {
+        logger.warn(`Error processing links: ${e.message}`);
+      }
+      
+      return [];
+    }
+
+    const discoveredMatches = await this.page.evaluate((cards) => {
+      const matches = [];
+      
+      const getText = (el) => {
+        if (!el) return '';
+        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+      };
+
+      const cleanText = (text) => {
+        if (!text) return '';
+        return text.replace(/\s+/g, ' ').trim();
+      };
+
+      const getTeamShortName = (name) => {
+        const map = {
+          'India': 'IND',
+          'England': 'ENG',
+          'Australia': 'AUS',
+          'Pakistan': 'PAK',
+          'New Zealand': 'NZ',
+          'South Africa': 'SA',
+          'West Indies': 'WI',
+          'Sri Lanka': 'SL',
+          'Bangladesh': 'BAN',
+          'Afghanistan': 'AFG',
+          'Zimbabwe': 'ZIM',
+          'Ireland': 'IRE',
+          'Nepal': 'NEP',
+          'Namibia': 'NAM',
+          'Galle Gallants': 'GAG',
+          'Dambulla Sixers': 'DAS',
+          'Kandy Falcons': 'KFS',
+          'Jaffna Kings': 'JKS',
+          'Colombo Kaps': 'CLK',
+          'Kandy Royals': 'KRL',
+          'London Spirit': 'LDN',
+          'Manchester Super Giants': 'MSG',
+          'Southern Brave': 'SOU',
+          'Welsh Fire': 'WEF',
+          'Birmingham Phoenix': 'BIR',
+          'Trent Rockets': 'TRE',
+          'Oval Invincibles': 'OVAL',
+          'Northern Superchargers': 'NOR',
+          'Worcestershire': 'WORCS',
+          'Derbyshire': 'DERBY',
+          'Lahore Qalandars': 'LQ',
+          'Perth Scorchers': 'PS',
+          'Guyana Amazon Warriors': 'GAW',
+          'San Francisco Unicorns': 'SFU',
+          'BP-W': 'BPW',
+          'TR-W': 'TRW',
+          'GLCS': 'GLC',
+          'SOM': 'SOM'
+        };
+        return map[name] || name.substring(0, 3).toUpperCase();
+      };
+
+      const getMatchUrl = (card) => {
+        const links = card.querySelectorAll('a[href*="cricket-live-score"]');
+        for (const link of links) {
+          const href = link.getAttribute('href');
+          if (href && href.includes('cricket-live-score')) {
+            if (href.startsWith('https://')) {
+              return href;
+            } else if (href.startsWith('/')) {
+              return `https://crex.com${href}`;
+            } else {
+              return `https://crex.com/${href}`;
+            }
+          }
+        }
+        return '';
+      };
+
+      cards.forEach((card) => {
+        const cardText = getText(card);
+        
+        if (cardText.includes('Advertisement') || 
+            cardText.includes('News') || 
+            cardText.includes('Video') || 
+            cardText.includes('Photo') ||
+            cardText.includes('Podcast')) {
+          return;
+        }
+
+        const matchUrl = getMatchUrl(card);
+        if (!matchUrl) return;
+
+        let team1Name = '';
+        let team2Name = '';
+
+        const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+        if (vsMatch) {
+          team1Name = cleanText(vsMatch[1]);
+          team2Name = cleanText(vsMatch[2]);
+        }
+
+        if (!team1Name || !team2Name) {
+          const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
+          const teamNames = [];
+          
+          for (const selector of teamSelectors) {
+            const elements = card.querySelectorAll(selector);
+            elements.forEach(el => {
+              const text = cleanText(getText(el));
+              if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
+                teamNames.push(text);
+              }
+            });
+            if (teamNames.length >= 2) break;
+          }
+
+          if (teamNames.length >= 2) {
+            team1Name = teamNames[0];
+            team2Name = teamNames[1];
+          }
+        }
+
+        const flags = [];
+        const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
+        flagImages.forEach(img => {
+          const src = img.getAttribute('src') || '';
+          if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
+            flags.push(src);
+          }
+        });
+
+        let team1Score = '';
+        let team1Wickets = '';
+        let team1Overs = '';
+        let team2Score = '';
+        let team2Wickets = '';
+        let team2Overs = '';
+
+        const scoreElements = card.querySelectorAll('.score, .team-score, .runs, .score-text, .match-score');
+        const oversElements = card.querySelectorAll('.overs, .over, .overs-text, .match-overs');
+        
+        if (scoreElements.length >= 2) {
+          const score1Text = cleanText(getText(scoreElements[0]));
+          const score2Text = cleanText(getText(scoreElements[1]));
+          
+          const score1Match = score1Text.match(/(\d+)[-/](\d+)/);
+          if (score1Match) {
+            team1Score = score1Match[1];
+            team1Wickets = score1Match[2];
+          }
+          
+          const score2Match = score2Text.match(/(\d+)[-/](\d+)/);
+          if (score2Match) {
+            team2Score = score2Match[1];
+            team2Wickets = score2Match[2];
+          }
+        }
+
+        if (oversElements.length >= 2) {
+          team1Overs = cleanText(getText(oversElements[0])).replace(/[()]/g, '');
+          team2Overs = cleanText(getText(oversElements[1])).replace(/[()]/g, '');
+        }
+
+        let series = '';
+        const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series'];
+        for (const selector of seriesSelectors) {
+          const el = card.querySelector(selector);
+          if (el) {
+            series = cleanText(getText(el));
+            break;
+          }
+        }
+
+        if (team1Name && team2Name) {
+          matches.push({
+            url: matchUrl,
+            status: 'LIVE',
+            team1: {
+              name: team1Name,
+              short: getTeamShortName(team1Name),
+              flag: flags[0] || '',
+              score: team1Score,
+              wickets: team1Wickets,
+              overs: team1Overs
+            },
+            team2: {
+              name: team2Name,
+              short: getTeamShortName(team2Name),
+              flag: flags[1] || '',
+              score: team2Score,
+              wickets: team2Wickets,
+              overs: team2Overs
+            },
+            series: series
+          });
+        }
+      });
+
+      return matches;
+    }, foundCards);
+
+    logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
+    
+    if (discoveredMatches.length > 0) {
+      discoveredMatches.forEach((match, index) => {
+        logger.info(`  ${index + 1}. ${match.team1.name} (${match.team1.score}/${match.team1.wickets}) vs ${match.team2.name} (${match.team2.score}/${match.team2.wickets}) - ${match.url}`);
+      });
+    }
+
+    deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
+    return discoveredMatches;
+  }
+
+  // ============================================================
+  // PROCESS LIVE LINKS (Fallback)
+  // ============================================================
+  async processLiveLinks(links) {
+    logger.info('🔍 Processing live links as fallback...');
+    
+    const matches = [];
+    
+    for (const link of links) {
+      try {
+        const href = await this.page.evaluate((el) => el.getAttribute('href'), link);
+        if (!href || !href.includes('cricket-live-score')) continue;
+        
+        let matchUrl = href;
+        if (href.startsWith('https://')) {
+          matchUrl = href;
+        } else if (href.startsWith('/')) {
+          matchUrl = `https://crex.com${href}`;
+        } else {
+          matchUrl = `https://crex.com/${href}`;
+        }
+        
+        const linkText = await this.page.evaluate((el) => {
+          return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+        }, link);
+        
+        let team1Name = '';
+        let team2Name = '';
+        
+        const vsMatch = linkText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+        if (vsMatch) {
+          team1Name = vsMatch[1].trim();
+          team2Name = vsMatch[2].trim();
+        }
+        
+        if (team1Name && team2Name) {
+          matches.push({
+            url: matchUrl,
+            status: 'LIVE',
+            team1: {
+              name: team1Name,
+              short: team1Name.substring(0, 3).toUpperCase(),
+              flag: '',
+              score: '',
+              wickets: '',
+              overs: ''
+            },
+            team2: {
+              name: team2Name,
+              short: team2Name.substring(0, 3).toUpperCase(),
+              flag: '',
+              score: '',
+              wickets: '',
+              overs: ''
+            },
+            series: ''
+          });
+        }
+      } catch (error) {
+        logger.debug(`Error processing link: ${error.message}`);
+      }
+    }
+    
+    return matches;
+  }
+
+  // ============================================================
+  // EXTRACT CURRENT BATSMEN - FIXED WITH SVG DETECTION
+  // ============================================================
+  async extractCurrentBatsmen(page) {
+    const batsmen = [];
+    
+    // Wait for batsman content to load
+    try {
+      await page.waitForSelector('.player-card-wrapper, .playing-batsmen-wrapper, .player-profile, .player-card', {
+        timeout: 10000
+      });
+      logger.debug(`   ✅ Batsman content loaded`);
+    } catch (e) {
+      logger.debug(`   ⚠️ No batsman content found after waiting`);
+    }
+
+    // ============================================================
+    // STEP 1: Find the batting container
+    // ============================================================
+    const battingContainerSelectors = [
+      '.player-active',
+      '.player-card-wrapper',
+      '.player-card',
+      '.player-profile',
+      '.playing-batsmen-wrapper',
+      '.batsmen-partnership',
+      '.batsmen-info-wrapper',
+      '.live-data',
+      '.player-section',
+      '.batting-card',
+      '.innings-batting',
+      '[class*="batsmen"]',
+      '[class*="player-card"]',
+      '[class*="player-profile"]',
+      '.team-innig .player-info',
+      '.score-card .player-info'
+    ];
+    
+    let container = null;
+    let usedContainerSelector = null;
+    
+    for (const selector of battingContainerSelectors) {
+      try {
+        const found = await page.$(selector);
+        if (found) {
+          container = found;
+          usedContainerSelector = selector;
+          logger.debug(`   ✅ Found batting container with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Continue to next selector
+      }
+    }
+
+    if (!container) {
+      logger.warn(`   ⚠️ No batting container found with any selector`);
+      
+      // Dump page HTML for debugging if no container found
+      try {
+        const bodyText = await page.evaluate(() => document.body.textContent.substring(0, 500));
+        logger.debug(`   Page text snippet: ${bodyText}`);
+      } catch (e) {}
+      
+      return batsmen;
+    }
+
+    // Log the container HTML for debugging
+    try {
+      const containerHtml = await page.evaluate(el => el.outerHTML.substring(0, 500), container);
+      logger.debug(`   Container HTML snippet: ${containerHtml}`);
+    } catch (e) {}
+
+    // ============================================================
+    // STEP 2: Find player cards within the container
+    // ============================================================
+    const cardSelectors = [
+      '.player-card-wrapper',
+      '.player-card',
+      '.player-profile',
+      '.batsman-item',
+      '.batsman',
+      '[class*="player-card"]',
+      '[class*="player-profile"]',
+      '[class*="batsman"]',
+      '.player-info'
+    ];
+    
+    let cards = [];
+    let usedCardSelector = null;
+    
+    for (const selector of cardSelectors) {
+      try {
+        const found = await container.$$(selector);
+        if (found && found.length > 0) {
+          cards = found;
+          usedCardSelector = selector;
+          logger.debug(`   ✅ Found ${cards.length} player cards with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {
+        // Continue to next selector
+      }
+    }
+
+    // If no cards found in container, try searching the whole page
+    if (cards.length === 0) {
+      logger.debug(`   ⚠️ No player cards found in container, searching entire page...`);
+      for (const selector of cardSelectors) {
+        try {
+          const found = await page.$$(selector);
+          if (found && found.length > 0) {
+            cards = found;
+            usedCardSelector = selector;
+            logger.debug(`   ✅ Found ${cards.length} player cards on page with selector: ${selector}`);
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (cards.length === 0) {
+      logger.warn(`   ⚠️ No player cards found with any selector`);
+      return batsmen;
+    }
+
+    // ============================================================
+    // STEP 3: Extract data from each card
+    // ============================================================
+    for (let i = 0; i < cards.length && batsmen.length < 2; i++) {
+      const card = cards[i];
+      
+      try {
+        // Extract name
+        const nameSelectors = [
+          '.batsmen-name',
+          '.player-name',
+          '.playerName',
+          '.name',
+          '.p-name',
+          'a[href*="/player/"] p',
+          'a[href*="/player/"]',
+          '.player-card .name',
+          '[class*="player-name"]',
+          '[class*="batsmen-name"]'
+        ];
+        
+        let name = '';
+        for (const nameSel of nameSelectors) {
+          try {
+            let nameEl;
+            if (nameSel.includes('a[href*="/player/"]')) {
+              nameEl = await card.$(nameSel);
+            } else {
+              nameEl = await card.$(nameSel);
+            }
+            
+            if (nameEl) {
+              const text = await page.evaluate(el => el.textContent.trim(), nameEl);
+              if (text && text.length > 0 && text.length < 50) {
+                name = text;
+                logger.debug(`   Found name with selector: ${nameSel} -> "${name}"`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (!name) {
+          logger.debug(`   ⚠️ No name found for card ${i + 1}, skipping`);
+          continue;
+        }
+
+        // ============================================================
+        // Extract runs and balls
+        // ============================================================
+        let runs = '';
+        let balls = '';
+        
+        const scoreSelectors = [
+          '.batsmen-score',
+          '.runs',
+          '.score',
+          '[class*="batsmen-score"]',
+          '[class*="score"]'
+        ];
+        
+        for (const scoreSel of scoreSelectors) {
+          try {
+            const scoreEl = await card.$(scoreSel);
+            if (scoreEl) {
+              const scoreText = await page.evaluate(el => el.textContent.trim(), scoreEl);
+              if (scoreText) {
+                logger.debug(`   Score text found: "${scoreText}"`);
+                
+                // Try to match "19(15)" or "19 (15)" format
+                const scoreMatch = scoreText.match(/(\d+)\s*\(\s*(\d+)\s*\)/);
+                if (scoreMatch) {
+                  runs = scoreMatch[1];
+                  balls = scoreMatch[2];
+                  logger.debug(`   Runs: ${runs}, Balls: ${balls}`);
+                  break;
+                }
+                
+                // If just a single number
+                const numMatch = scoreText.match(/(\d+)/);
+                if (numMatch) {
+                  runs = numMatch[1];
+                  balls = null;
+                  logger.debug(`   Runs (only): ${runs}`);
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        // ============================================================
+        // Extract image
+        // ============================================================
+        let image = null;
+        const imageSelectors = [
+          '.batsmen-image img',
+          '.player-image img',
+          '.player-card img',
+          'img[src*="player"]',
+          'img[src*="cricketvectors"]'
+        ];
+        
+        for (const imgSel of imageSelectors) {
+          try {
+            const imgEl = await card.$(imgSel);
+            if (imgEl) {
+              const src = await page.evaluate(el => el.getAttribute('src'), imgEl);
+              if (src) {
+                // Convert relative URL to absolute if needed
+                if (src.startsWith('/')) {
+                  image = `https://crex.com${src}`;
+                } else if (src.startsWith('http')) {
+                  image = src;
+                } else {
+                  image = `https://crex.com/${src}`;
+                }
+                logger.debug(`   Image found: ${image}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // ============================================================
+        // Extract profile URL
+        // ============================================================
+        let profileUrl = null;
+        const profileSelectors = [
+          'a[href*="/player/"]',
+          'a[href*="player-profile"]',
+          'a[href*="players"]'
+        ];
+        
+        for (const profSel of profileSelectors) {
+          try {
+            const profEl = await card.$(profSel);
+            if (profEl) {
+              const href = await page.evaluate(el => el.getAttribute('href'), profEl);
+              if (href) {
+                // Convert relative URL to absolute
+                if (href.startsWith('/')) {
+                  profileUrl = `https://crex.com${href}`;
+                } else if (href.startsWith('http')) {
+                  profileUrl = href;
+                } else {
+                  profileUrl = `https://crex.com/${href}`;
+                }
+                logger.debug(`   Profile URL found: ${profileUrl}`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // ============================================================
+        // STRICKER DETECTION - Check for .circle-strike-icon AND SVG
+        // ============================================================
+        let is_striker = false;
+        let foundSvgType = null;
+        
+        // Method 1: Check for .circle-strike-icon class
+        const strikeSelectors = [
+          '.circle-strike-icon',
+          '.circle-strike-icon.icon-left',
+          '.strike-icon',
+          '[class*="strike"]',
+          '[class*="striker"]',
+          '.striker-indicator'
+        ];
+        
+        for (const strikeSel of strikeSelectors) {
+          try {
+            const strikeIcon = await card.$(strikeSel);
+            if (strikeIcon) {
+              is_striker = true;
+              foundSvgType = 'Strike Icon Class';
+              logger.debug(`   ✅ Found strike icon with selector: ${strikeSel}`);
+              break;
+            }
+          } catch (e) {}
+        }
+        
+        // Method 2: Check for SVG with BAT icon (ce_highlight_ac2)
+        if (!is_striker) {
+          try {
+            const svgs = await card.$$('svg');
+            for (const svg of svgs) {
+              const svgHtml = await page.evaluate(el => el.outerHTML, svg);
+              if (svgHtml) {
+                // Check for bat icon indicators
+                if (svgHtml.includes('ce_highlight_ac2') || 
+                    svgHtml.includes('highlight_ac2') || 
+                    svgHtml.includes('fill="var(--ce_highlight_ac2)"')) {
+                  is_striker = true;
+                  foundSvgType = 'Bat Icon (SVG)';
+                  logger.debug(`   ✅ Found BAT SVG icon with ce_highlight_ac2`);
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+        
+        // Method 3: Check for any SVG that might indicate striker
+        if (!is_striker) {
+          try {
+            const svgs = await card.$$('svg');
+            for (const svg of svgs) {
+              const svgHtml = await page.evaluate(el => el.outerHTML, svg);
+              if (svgHtml && (
+                svgHtml.includes('strike') ||
+                svgHtml.includes('striker') ||
+                svgHtml.includes('bat') ||
+                svgHtml.includes('cricket-bat')
+              )) {
+                is_striker = true;
+                foundSvgType = 'Strike SVG (generic)';
+                logger.debug(`   ✅ Found strike SVG indicator`);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // ============================================================
+        // DEBUG LOGGING
+        // ============================================================
+        logger.debug(`   --- Player ${i + 1} ---`);
+        logger.debug(`   Player : ${name}`);
+        logger.debug(`   Runs : ${runs || 'N/A'}`);
+        logger.debug(`   Balls : ${balls || 'N/A'}`);
+        logger.debug(`   Image : ${image ? 'YES' : 'NO'}`);
+        logger.debug(`   Profile : ${profileUrl ? 'YES' : 'NO'}`);
+        logger.debug(`   SVG Found : ${foundSvgType ? 'YES' : 'NO'}`);
+        if (foundSvgType) {
+          logger.debug(`   Type : ${foundSvgType}`);
+        }
+        logger.debug(`   is_striker : ${is_striker}`);
+
+        // ============================================================
+        // Add to batsmen array
+        // ============================================================
+        batsmen.push({
+          name: name,
+          runs: runs || null,
+          balls: balls || null,
+          image: image,
+          profile_url: profileUrl,
+          is_striker: is_striker
+        });
+
+      } catch (error) {
+        logger.debug(`   ❌ Error processing card ${i + 1}: ${error.message}`);
+        continue;
+      }
+    }
+
+    // ============================================================
+    // STEP 4: Validate and fix striker status
+    // ============================================================
+    if (batsmen.length > 0) {
+      const strikers = batsmen.filter(b => b.is_striker === true);
+      
+      if (strikers.length === 0) {
+        logger.warn(`   ⚠️ No striker detected! Falling back to first batsman as striker`);
+        if (batsmen.length > 0) {
+          batsmen[0].is_striker = true;
+          logger.debug(`   ✅ Set ${batsmen[0].name} as striker (fallback)`);
+        }
+      } else if (strikers.length > 1) {
+        logger.warn(`   ⚠️ Multiple strikers detected (${strikers.length})! Keeping first striker only`);
+        let foundFirst = false;
+        for (const batsman of batsmen) {
+          if (batsman.is_striker) {
+            if (!foundFirst) {
+              foundFirst = true;
+            } else {
+              batsman.is_striker = false;
+              logger.debug(`   Removed striker status from: ${batsman.name}`);
+            }
+          }
+        }
+      }
+      
+      // Log final striker
+      const finalStriker = batsmen.find(b => b.is_striker);
+      if (finalStriker) {
+        logger.info(`   🏏 Current striker: ${finalStriker.name} (${finalStriker.runs || '0'} runs, ${finalStriker.balls || '0'} balls)`);
+      }
+      
+      logger.info(`   ✅ Extracted ${batsmen.length} batsmen total`);
+    } else {
+      logger.warn(`   ⚠️ No batsmen extracted`);
+      
+      // Try to dump the entire batsman section HTML for debugging
+      try {
+        const containerHtml = await page.evaluate(() => {
+          const containers = document.querySelectorAll('.player-card-wrapper, .playing-batsmen-wrapper, .player-profile, .player-card');
+          if (containers.length > 0) {
+            return containers[0].outerHTML.substring(0, 1000);
+          }
+          return 'No container found';
+        });
+        logger.debug(`   Container HTML for debugging: ${containerHtml}`);
+      } catch (e) {}
+    }
+
+    return batsmen;
+  }
+
+  // ============================================================
+  // EXTRACT CURRENT BOWLER - FIXED WITH SVG DETECTION
+  // ============================================================
+  async extractCurrentBowler(page) {
+    const bowler = {
+      name: '',
+      overs: '',
+      runs: null,
+      wickets: null
+    };
+    
+    // Wait for bowler content to load
+    try {
+      await page.waitForSelector('.player-card-wrapper, .player-profile, .bowling-card, .bowler-container', {
+        timeout: 5000
+      });
+      logger.debug(`   ✅ Bowler content loaded`);
+    } catch (e) {
+      logger.debug(`   ⚠️ No bowler content found after waiting`);
+    }
+    
+    const bowlingContainerSelectors = [
+      '.player-card-wrapper',
+      '.player-card.border',
+      '.player-profile',
+      '.bowling-card',
+      '.bowler-info',
+      '.current-bowler',
+      '.bowler-container',
+      '.player-info',
+      '[class*="bowler"]',
+      '[class*="bowling"]'
+    ];
+    
+    let container = null;
+    let usedContainerSelector = null;
+    
+    for (const selector of bowlingContainerSelectors) {
+      try {
+        const found = await page.$(selector);
+        if (found) {
+          container = found;
+          usedContainerSelector = selector;
+          logger.debug(`   Found bowling container with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {}
+    }
+    
+    if (!container) {
+      logger.debug(`   ⚠️ No bowling container found`);
+      return bowler;
+    }
+    
+    // Extract name
+    const nameSelectors = [
+      '.batsmen-name', 
+      '.player-name', 
+      '.name', 
+      '.bowler-name',
+      'a[href*="/player/"] p',
+      'a[href*="/player/"]',
+      '.p-name',
+      '[class*="player-name"]',
+      '[class*="bowler-name"]'
+    ];
+    
+    for (const nameSel of nameSelectors) {
+      try {
+        let nameEl;
+        if (nameSel.includes('a[href*="/player/"]')) {
+          nameEl = await container.$(nameSel);
+        } else {
+          nameEl = await container.$(nameSel);
+        }
+        
+        if (nameEl) {
+          const text = await page.evaluate(el => el.textContent.trim(), nameEl);
+          if (text && text.length > 0 && text.length < 50) {
+            bowler.name = text;
+            logger.debug(`   Bowler name found: ${bowler.name}`);
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // Extract bowling figures
+    const figuresSelectors = [
+      '.bowling-figures',
+      '.figures',
+      '.stats',
+      '.score',
+      '[class*="figures"]',
+      '[class*="stats"]'
+    ];
+    
+    for (const figSel of figuresSelectors) {
+      try {
+        const figEl = await container.$(figSel);
+        if (figEl) {
+          const text = await page.evaluate(el => el.textContent.trim(), figEl);
+          if (text) {
+            logger.debug(`   Bowling figures text: "${text}"`);
+            
+            // Try to match "0-7 (0.4)" or "1-28 (3.0)" format
+            const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
+            if (figuresMatch) {
+              bowler.wickets = parseInt(figuresMatch[1]);
+              bowler.runs = parseInt(figuresMatch[2]);
+              bowler.overs = figuresMatch[3];
+              logger.debug(`   Bowler figures: ${bowler.wickets}-${bowler.runs} (${bowler.overs})`);
+              break;
+            }
+            
+            // Try to match "0.4-7" or "3.0-28" format
+            const altMatch = text.match(/([\d.]+)-(\d+)/);
+            if (altMatch) {
+              bowler.overs = altMatch[1];
+              bowler.runs = parseInt(altMatch[2]);
+              logger.debug(`   Bowler figures (alt): ${bowler.overs}-${bowler.runs}`);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // If no figures found, try container text
+    if (!bowler.overs && !bowler.runs && !bowler.wickets) {
+      try {
+        const text = await page.evaluate(el => el.textContent.trim(), container);
+        if (text) {
+          const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
+          if (figuresMatch) {
+            bowler.wickets = parseInt(figuresMatch[1]);
+            bowler.runs = parseInt(figuresMatch[2]);
+            bowler.overs = figuresMatch[3];
+            logger.debug(`   Bowler figures (from container): ${bowler.wickets}-${bowler.runs} (${bowler.overs})`);
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // ============================================================
+    // CHECK FOR RED BALL SVG (ce_highlight_khayi)
+    // ============================================================
+    let isActiveBowler = false;
+    let foundSvgType = null;
+    
+    try {
+      const svgs = await container.$$('svg');
+      for (const svg of svgs) {
+        const svgHtml = await page.evaluate(el => el.outerHTML, svg);
+        if (svgHtml) {
+          // Check for ball icon indicators (ce_highlight_khayi)
+          if (svgHtml.includes('ce_highlight_khayi') || 
+              svgHtml.includes('highlight_khayi') || 
+              svgHtml.includes('fill="var(--ce_highlight_khayi)"')) {
+            isActiveBowler = true;
+            foundSvgType = 'Ball Icon (SVG)';
+            logger.debug(`   ✅ Found RED BALL SVG icon with ce_highlight_khayi`);
+            break;
+          }
+          
+          // Also check for generic ball or bowling indicators
+          if (svgHtml.includes('ball') || 
+              svgHtml.includes('cricket-ball') ||
+              svgHtml.includes('bowling')) {
+            isActiveBowler = true;
+            foundSvgType = 'Ball SVG (generic)';
+            logger.debug(`   ✅ Found ball SVG indicator`);
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    // ============================================================
+    // DEBUG LOGGING
+    // ============================================================
+    logger.debug(`   Bowler : ${bowler.name || 'N/A'}`);
+    logger.debug(`   Overs : ${bowler.overs || 'N/A'}`);
+    logger.debug(`   Runs : ${bowler.runs ?? 'N/A'}`);
+    logger.debug(`   Wickets : ${bowler.wickets ?? 'N/A'}`);
+    logger.debug(`   SVG Found : ${foundSvgType ? 'YES' : 'NO'}`);
+    if (foundSvgType) {
+      logger.debug(`   Type : ${foundSvgType}`);
+    }
+    logger.debug(`   Current Bowler : ${isActiveBowler ? 'true' : 'false'}`);
+    
+    // Always consider the found bowler as current if we have a name
+    // The SVG detection is used for verification
+    if (bowler.name && (bowler.overs || bowler.runs !== null || bowler.wickets !== null)) {
+      logger.info(`   🎯 Current bowler: ${bowler.name} (${bowler.wickets || 0}-${bowler.runs || 0}, ${bowler.overs || '0.0'})`);
+    }
+    
+    return bowler;
+  }
+
+  // ============================================================
+  // EXTRACT TOSS - SIMPLIFIED WITH FULL MESSAGE
+  // ============================================================
+  async extractToss(page) {
+    const toss = {
+      status: 'Not Started'
+    };
+
+    let foundToss = false;
+    let tossMessage = '';
+
+    // ============================================================
+    // PRIMARY SELECTOR: Search in .toss-wrap
+    // ============================================================
+    const tossSelectors = [
+      '.toss-wrap p',
+      '.toss-wrap',
+      '[class*="toss"] p',
+      '[class*="toss"]',
+      '.match-info .toss',
+      '.toss-info',
+      '.toss-detail',
+      '.match-toss',
+      '.toss-container',
+      '.toss-section'
+    ];
+
+    for (const selector of tossSelectors) {
+      try {
+        const elements = await page.$$(selector);
+        
+        for (const el of elements) {
+          try {
+            let text = await page.evaluate(el => el.textContent.trim(), el);
+            
+            if (text && text.length > 0) {
+              text = text.replace(/\s+/g, ' ').trim();
+              
+              if (text.includes('won the toss')) {
+                tossMessage = text;
+                foundToss = true;
+                logger.debug(`   📍 Found toss container with selector: ${selector}`);
+                logger.debug(`   📝 Toss Message: "${tossMessage}"`);
+                
+                toss.status = tossMessage;
+                logger.debug(`   ✅ Toss extracted successfully`);
+                return toss;
+              }
+            }
+          } catch (e) {
+            // Continue to next element
+          }
+        }
+        
+        if (foundToss) break;
+        
+      } catch (error) {
+        logger.debug(`   ⚠️ Error with selector "${selector}": ${error.message}`);
+      }
+    }
+
+    // ============================================================
+    // FALLBACK: Search in Match Info page
+    // ============================================================
+    if (!foundToss) {
+      try {
+        const matchInfoSelectors = [
+          '.match-info',
+          '.match-details',
+          '.match-header',
+          '.scorecard-header',
+          '.match-container',
+          '.match-wrapper',
+          '.match-content'
+        ];
+        
+        for (const selector of matchInfoSelectors) {
+          try {
+            const container = await page.$(selector);
+            if (container) {
+              const text = await page.evaluate(el => el.textContent.trim(), container);
+              if (text && text.includes('won the toss')) {
+                const lines = text.split('\n');
+                for (const line of lines) {
+                  const trimmedLine = line.trim();
+                  if (trimmedLine.includes('won the toss')) {
+                    tossMessage = trimmedLine.replace(/\s+/g, ' ').trim();
+                    foundToss = true;
+                    logger.debug(`   📍 Found toss in match info: "${tossMessage}"`);
+                    
+                    toss.status = tossMessage;
+                    logger.debug(`   ✅ Toss extracted from match info`);
+                    return toss;
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      } catch (error) {
+        logger.debug(`   ⚠️ Error searching match info: ${error.message}`);
+      }
+    }
+
+    // ============================================================
+    // FINAL FALLBACK: Search entire page
+    // ============================================================
+    if (!foundToss) {
+      try {
+        const allElements = await page.$$('*');
+        for (const el of allElements) {
+          try {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text && text.includes('won the toss')) {
+              const cleanedText = text.replace(/\s+/g, ' ').trim();
+              if (cleanedText.length < 200) {
+                tossMessage = cleanedText;
+                foundToss = true;
+                logger.debug(`   📍 Found toss in page element: "${tossMessage}"`);
+                
+                toss.status = tossMessage;
+                logger.debug(`   ✅ Toss extracted from page element`);
+                return toss;
+              }
+            }
+          } catch (e) {}
+        }
+      } catch (error) {
+        logger.debug(`   ⚠️ Error searching page elements: ${error.message}`);
+      }
+    }
+
+    if (!foundToss) {
+      logger.debug(`   ⚠️ No toss information found on the Match Info page`);
+      logger.debug(`   ⏳ Setting toss status to: Not Started`);
+    }
+
+    return toss;
+  }
+
+  // ============================================================
+  // EXTRACT SERIES
+  // ============================================================
+  async extractSeries(page) {
+    const selectors = [
+      '.series-name',
+      '.snameTag', 
+      '.match-series',
+      '.series-title',
+      '.tournament',
+      '.series',
+      '.match-tournament',
+      'h1',
+      '.match-header .series'
+    ];
+    
+    for (const selector of selectors) {
+      try {
+        const el = await page.$(selector);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text && text.length > 0) {
+            logger.debug(`   Series found with selector: ${selector} -> "${text}"`);
+            return text;
+          }
+        }
+      } catch (e) {}
+    }
+    
+    try {
+      const title = await page.title();
+      if (title && !title.includes('Cricket') && title.length > 3) {
+        logger.debug(`   Series found from page title: "${title}"`);
+        return title;
+      }
+    } catch (e) {}
+    
+    return '';
+  }
+
+  // ============================================================
+  // EXTRACT VENUE
+  // ============================================================
+  async extractVenue(page) {
+    const selectors = [
+      '.venue',
+      '.match-venue',
+      '.venue-name',
+      '.location',
+      '.stadium',
+      '.match-location',
+      '.match-info .venue',
+      '.match-details .venue',
+      '.matchInfo',
+      '.info-row',
+      '.venue-info',
+      '.meta-info',
+      '.scorecard-header',
+      '[data-testid*="venue"]',
+      '[class*="venue"]',
+      '[class*="location"]'
+    ];
+    
+    for (const selector of selectors) {
+      try {
+        const elements = await page.$$(selector);
+        for (const el of elements) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text && text.length > 3 && !text.includes('Over') && !text.includes('wd')) {
+            logger.debug(`   Venue found with selector: ${selector} -> "${text}"`);
+            return text;
+          }
+        }
+      } catch (e) {}
+    }
+    
+    try {
+      const bodyText = await page.evaluate(() => document.body.textContent);
+      const patterns = [
+        /Venue:\s*([^,\n]+(?:,[^,\n]+)?)/i,
+        /at\s+([A-Za-z\s,]+(?:Stadium|Ground|Park|Gardens|Oval))/i,
+        /Stadium:\s*([^,\n]+)/i,
+        /Ground:\s*([^,\n]+)/i,
+        /Location:\s*([^,\n]+)/i
+      ];
+      for (const pattern of patterns) {
+        const match = bodyText.match(pattern);
+        if (match && match[1]) {
+          const venue = match[1].trim();
+          if (venue && venue.length > 3) {
+            logger.debug(`   Venue found from text pattern: "${venue}"`);
+            return venue;
+          }
+        }
+      }
+    } catch (e) {}
+    
+    return '';
+  }
+
+  // ============================================================
+  // EXTRACT SCOREBOARD - Supports The Hundred (35b) format
+  // ============================================================
+  async extractScoreboard(page) {
+    const scoreboard = {
+      batting_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
+      bowling_team: { name: '' },
+      target: null,
+      required_runs: null,
+      required_balls: null,
+      crr: null,
+      rrr: null,
+      current_ball: ''
+    };
+
+    const teamInningsSelectors = ['.team-innig', '.live-data', '.team-result', '.result-box'];
+    let battingEl = null;
+    let bowlingEl = null;
+    
+    for (const selector of teamInningsSelectors) {
+      try {
+        const elements = await page.$$(selector);
+        if (elements.length >= 2) {
+          battingEl = elements[0];
+          bowlingEl = elements[1];
+          logger.debug(`   Scoreboard found with selector: ${selector}`);
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (battingEl && bowlingEl) {
+      // Batting team name
+      const nameSelectors = ['.team-name', '.name', '.team-title', '.team-label'];
+      for (const sel of nameSelectors) {
+        try {
+          const el = await battingEl.$(sel);
+          if (el) {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text) {
+              scoreboard.batting_team.name = text;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Extract score, runs, wickets, overs
+      const runsContainer = await battingEl.$('.runs, .score, .team-score');
+      let detectedFormat = 'Normal';
+      let oversValue = '';
+      
+      if (runsContainer) {
+        const spans = await runsContainer.$$('span');
+        const spanTexts = [];
+        for (const span of spans) {
+          const text = await page.evaluate(el => el.textContent.trim(), span);
+          if (text) spanTexts.push(text);
+        }
+        
+        // First span is the score with wickets
+        if (spanTexts.length > 0) {
+          const scoreText = spanTexts[0];
+          // Support both - and / formats
+          const scoreMatch = scoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
+          if (scoreMatch) {
+            scoreboard.batting_team.score = scoreText;
+            scoreboard.batting_team.runs = parseInt(scoreMatch[1]);
+            scoreboard.batting_team.wickets = parseInt(scoreMatch[2]);
+            logger.debug(`   Score found: ${scoreText} (Runs: ${scoreboard.batting_team.runs}, Wickets: ${scoreboard.batting_team.wickets})`);
+          } else {
+            const numMatch = scoreText.match(/(\d+)/);
+            if (numMatch) {
+              scoreboard.batting_team.score = scoreText;
+              scoreboard.batting_team.runs = parseInt(numMatch[1]);
+              logger.debug(`   Score found (runs only): ${scoreText}`);
+            }
+          }
+        }
+        
+        // Second span is the overs - Support both formats
+        if (spanTexts.length > 1) {
+          oversValue = spanTexts[1];
+          // Support both "18.2" and "35b" format
+          const overRegex = /^(\d+\.\d+|\d+b)$/i;
+          if (oversValue && overRegex.test(oversValue)) {
+            scoreboard.batting_team.overs = oversValue;
+            // Remove brackets if present for current ball
+            scoreboard.current_ball = oversValue.replace(/[()]/g, '');
+            
+            // Detect format
+            if (oversValue.includes('b')) {
+              detectedFormat = 'The Hundred (balls)';
+            } else if (oversValue.includes('.')) {
+              detectedFormat = 'Normal Cricket (overs)';
+            }
+            
+            logger.debug(`   Overs found: ${oversValue} (Format: ${detectedFormat})`);
+            logger.debug(`   Current ball: ${scoreboard.current_ball}`);
+          } else {
+            // Try to find any overs value in the container
+            const allText = await page.evaluate(el => el.textContent.trim(), runsContainer);
+            const overMatch = allText.match(/(\d+\.\d+|\d+b)/);
+            if (overMatch) {
+              oversValue = overMatch[1];
+              scoreboard.batting_team.overs = oversValue;
+              scoreboard.current_ball = oversValue.replace(/[()]/g, '');
+              
+              if (oversValue.includes('b')) {
+                detectedFormat = 'The Hundred (balls)';
+              } else if (oversValue.includes('.')) {
+                detectedFormat = 'Normal Cricket (overs)';
+              }
+              
+              logger.debug(`   Overs found (fallback): ${oversValue} (Format: ${detectedFormat})`);
+            }
+          }
+        } else {
+          // Try to find overs in the whole batting element
+          const battingText = await page.evaluate(el => el.textContent.trim(), battingEl);
+          const overMatch = battingText.match(/(\d+\.\d+|\d+b)/);
+          if (overMatch) {
+            oversValue = overMatch[1];
+            scoreboard.batting_team.overs = oversValue;
+            scoreboard.current_ball = oversValue.replace(/[()]/g, '');
+            
+            if (oversValue.includes('b')) {
+              detectedFormat = 'The Hundred (balls)';
+            } else if (oversValue.includes('.')) {
+              detectedFormat = 'Normal Cricket (overs)';
+            }
+            
+            logger.debug(`   Overs found (global): ${oversValue} (Format: ${detectedFormat})`);
+          }
+        }
+      }
+
+      // Fallback: Try other selectors for score
+      if (!scoreboard.batting_team.score) {
+        const scoreSelectors = ['.score-first', '.score'];
+        for (const sel of scoreSelectors) {
+          try {
+            const el = await battingEl.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text) {
+                const scoreMatch = text.match(/(\d+)\s*[-/]\s*(\d+)/);
+                if (scoreMatch) {
+                  scoreboard.batting_team.score = text;
+                  scoreboard.batting_team.runs = parseInt(scoreMatch[1]);
+                  scoreboard.batting_team.wickets = parseInt(scoreMatch[2]);
+                  logger.debug(`   Score found (fallback): ${text}`);
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Fallback: Try other selectors for overs
+      if (!scoreboard.batting_team.overs) {
+        const oversSelectors = ['.score-last', '.overs', '.over', '.current-over'];
+        for (const sel of oversSelectors) {
+          try {
+            const el = await battingEl.$(sel);
+            if (el) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text) {
+                const overRegex = /^(\d+\.\d+|\d+b)$/i;
+                if (overRegex.test(text)) {
+                  scoreboard.batting_team.overs = text;
+                  scoreboard.current_ball = text.replace(/[()]/g, '');
+                  
+                  if (text.includes('b')) {
+                    detectedFormat = 'The Hundred (balls)';
+                  } else if (text.includes('.')) {
+                    detectedFormat = 'Normal Cricket (overs)';
+                  }
+                  
+                  logger.debug(`   Overs found (fallback): ${text}`);
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Bowling team name
+      for (const sel of nameSelectors) {
+        try {
+          const el = await bowlingEl.$(sel);
+          if (el) {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text) {
+              scoreboard.bowling_team.name = text;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+      
+      // Log final detected format
+      logger.info(`   📊 Scoreboard Summary:`);
+      logger.info(`      Score: ${scoreboard.batting_team.score || 'N/A'}`);
+      logger.info(`      Runs: ${scoreboard.batting_team.runs || 'N/A'}`);
+      logger.info(`      Wickets: ${scoreboard.batting_team.wickets || 'N/A'}`);
+      logger.info(`      Overs: ${scoreboard.batting_team.overs || 'N/A'}`);
+      logger.info(`      Current Ball: ${scoreboard.current_ball || 'N/A'}`);
+      logger.info(`      Format: ${detectedFormat}`);
+    }
+
+    // If still no current ball, try other selectors
+    if (!scoreboard.current_ball) {
+      const currentBallSelectors = [
+        '.team-score .runs span:nth-child(2)',
+        '.score-last',
+        '.current-over',
+        '.live-over',
+        '[class*="over"]'
+      ];
+      for (const sel of currentBallSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            const text = await page.evaluate(el => el.textContent.trim(), el);
+            if (text) {
+              const overRegex = /^(\d+\.\d+|\d+b)$/i;
+              if (overRegex.test(text)) {
+                scoreboard.current_ball = text.replace(/[()]/g, '');
+                logger.debug(`   Current ball found: ${scoreboard.current_ball}`);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    // CRR
+    const crrSelectors = ['.crr', '.current-run-rate', '.run-rate'];
+    for (const sel of crrSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) {
+            scoreboard.crr = parseFloat(text) || null;
+            logger.debug(`   CRR found: ${scoreboard.crr}`);
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // RRR
+    const rrrSelectors = ['.rrr', '.required-run-rate', '.req-run-rate'];
+    for (const sel of rrrSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) {
+            scoreboard.rrr = parseFloat(text) || null;
+            logger.debug(`   RRR found: ${scoreboard.rrr}`);
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Target
+    const targetSelectors = ['.target', '.target-score'];
+    for (const sel of targetSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) {
+            scoreboard.target = parseInt(text) || null;
+            logger.debug(`   Target found: ${scoreboard.target}`);
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Required runs and balls
+    const reqSelectors = ['.required-runs', '.req-runs', '.required-balls', '.req-balls'];
+    for (const sel of reqSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) {
+            if (sel.includes('runs') || sel.includes('Runs')) {
+              scoreboard.required_runs = parseInt(text) || null;
+            } else {
+              scoreboard.required_balls = parseInt(text) || null;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    return scoreboard;
+  }
+
+  // ============================================================
+  // EXTRACT OVERS TIMELINE - Supports The Hundred
+  // ============================================================
+  async extractOversTimeline(page) {
+    const overs = [];
+    
+    const containerSelectors = [
+      '.overs-timeline',
+      '.overs-slide-container',
+      '.overs-container'
+    ];
+    
+    for (const containerSel of containerSelectors) {
+      try {
+        const container = await page.$(containerSel);
+        if (container) {
+          const slideSelectors = ['.overs-slide', '.content', '.over-item'];
+          for (const slideSel of slideSelectors) {
+            const slides = await container.$$(slideSel);
+            for (const slide of slides) {
+              // Extract over number - supports "6th Five", "7th Five", "Over 17"
+              let overNumber = '';
+              const overSelectors = [
+                '.over-title',
+                '.over-number', 
+                '.title',
+                '.header',
+                'h4',
+                '[class*="over"]'
+              ];
+              
+              for (const sel of overSelectors) {
+                try {
+                  const el = await slide.$(sel);
+                  if (el) {
+                    const text = await page.evaluate(el => el.textContent.trim(), el);
+                    if (text) {
+                      // Look for "Over 46" pattern
+                      let match = text.match(/Over\s*(\d+)/i);
+                      if (match) {
+                        overNumber = match[1];
+                        logger.debug(`   Found over number from header: ${overNumber}`);
+                        break;
+                      }
+                      // Look for "6th Five", "7th Five" pattern
+                      match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
+                      if (match) {
+                        overNumber = `${match[1]}th Five`;
+                        logger.debug(`   Found The Hundred over: ${overNumber}`);
+                        break;
+                      }
+                      // If it's just a number
+                      if (text.match(/^\d+$/)) {
+                        overNumber = text;
+                        logger.debug(`   Found over number from numeric header: ${overNumber}`);
+                        break;
+                      }
+                    }
+                  }
+                } catch (e) {}
+              }
+              
+              // If no over number found, try container text
+              if (!overNumber) {
+                try {
+                  const text = await page.evaluate(el => el.textContent.trim(), slide);
+                  let match = text.match(/Over\s*(\d+)/i);
+                  if (match) {
+                    overNumber = match[1];
+                    logger.debug(`   Found over number from container text: ${overNumber}`);
+                  } else {
+                    match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
+                    if (match) {
+                      overNumber = `${match[1]}th Five`;
+                      logger.debug(`   Found The Hundred over from container: ${overNumber}`);
+                    }
+                  }
+                } catch (e) {}
+              }
+              
+              // Extract balls - support variable number of balls
+              const balls = [];
+              const ballElements = await slide.$$('.over-ball, .ball');
+              for (const ballEl of ballElements) {
+                const result = await page.evaluate(el => el.textContent.trim(), ballEl);
+                if (result) balls.push(result);
+              }
+              
+              // Extract total
+              let total = '';
+              const totalSelectors = ['.total', '.over-total'];
+              for (const sel of totalSelectors) {
+                try {
+                  const el = await slide.$(sel);
+                  if (el) {
+                    const text = await page.evaluate(el => el.textContent.trim(), el);
+                    if (text) {
+                      total = text.replace(/^=\s*/, '').trim();
+                      break;
+                    }
+                  }
+                } catch (e) {}
+              }
+              
+              if (!total) {
+                try {
+                  const text = await page.evaluate(el => el.textContent.trim(), slide);
+                  const match = text.match(/=\s*(\d+)/);
+                  if (match) {
+                    total = match[1];
+                  }
+                } catch (e) {}
+              }
+              
+              if (overNumber || balls.length > 0) {
+                const overData = {
+                  over: overNumber || '',
+                  balls: balls,
+                  total: total || ''
+                };
+                overs.push(overData);
+                if (overNumber) {
+                  logger.debug(`   Over "${overNumber}" found with ${balls.length} balls, total: ${total}`);
+                }
+              }
+            }
+            if (overs.length > 0) {
+              logger.debug(`   Found ${overs.length} overs with selector: ${slideSel}`);
+              break;
+            }
+          }
+        }
+        if (overs.length > 0) break;
+      } catch (e) {}
+    }
+    
+    logger.info(`   📊 Timeline Summary: ${overs.length} overs extracted`);
+    return overs;
+  }
+
+  // ============================================================
+  // EXTRACT COMMENTARY
+  // ============================================================
+  async extractCommentary(page) {
+    const commentary = [];
+    
+    const containerSelectors = [
+      '.commentary-container',
+      '.commentary-section',
+      '.commentary-list',
+      '.live-commentary'
+    ];
+    
+    for (const containerSel of containerSelectors) {
+      try {
+        const container = await page.$(containerSel);
+        if (container) {
+          const itemSelectors = ['.commentary-item', '.comment', '.ball-commentary'];
+          for (const itemSel of itemSelectors) {
+            const items = await container.$$(itemSel);
+            for (const item of items) {
+              const ball = await this.extractTextFromSelectors(page, item, [
+                '.ball-number',
+                '.over-ball',
+                '.ball'
+              ]);
+              const result = await this.extractTextFromSelectors(page, item, [
+                '.result',
+                '.event',
+                '.ball-result'
+              ]);
+              const text = await this.extractTextFromSelectors(page, item, [
+                '.comment-text',
+                '.description',
+                '.comment'
+              ]);
+              const bowler = await this.extractTextFromSelectors(page, item, [
+                '.bowler-name',
+                '.bowler'
+              ]);
+              const batsman = await this.extractTextFromSelectors(page, item, [
+                '.batsman-name',
+                '.batsman'
+              ]);
+              
+              if (ball || text || result) {
+                const commentItem = {
+                  ball: ball || '',
+                  result: result || '',
+                  text: text || ''
+                };
+                if (bowler) commentItem.bowler = bowler;
+                if (batsman) commentItem.batsman = batsman;
+                commentary.push(commentItem);
+              }
+            }
+            if (commentary.length > 0) {
+              logger.debug(`   Found ${commentary.length} commentary items with selector: ${itemSel}`);
+              break;
+            }
+          }
+        }
+        if (commentary.length > 0) break;
+      } catch (e) {}
+    }
+    
+    if (commentary.length > 0) {
+      logger.debug(`   Total commentary items extracted: ${commentary.length}`);
+    }
+    
+    return commentary;
+  }
+
+  // ============================================================
+  // EXTRACT PREDICTION
+  // ============================================================
+  async extractPrediction(page) {
+    const prediction = {
+      home_probability: null,
+      away_probability: null,
+      projected_scores: []
+    };
+    
+    try {
+      const displayFlex = await page.$('.displayFlex');
+      
+      if (displayFlex) {
+        logger.debug(`   Found .displayFlex container`);
+        const percentageElements = await displayFlex.$$('.percentageScreenText');
+        const percentages = [];
+        for (const el of percentageElements) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) {
+            const num = parseInt(text.replace('%', ''));
+            if (!isNaN(num)) percentages.push(num);
+          }
+        }
+        if (percentages.length >= 2) {
+          prediction.home_probability = percentages[0];
+          prediction.away_probability = percentages[1];
+          logger.debug(`   ✅ Win probability found: ${prediction.home_probability}% vs ${prediction.away_probability}%`);
+        }
+      }
+      
+      if (prediction.home_probability === null || prediction.away_probability === null) {
+        logger.debug(`   Trying fallback selectors for win probability`);
+        const fallbackSelectors = [
+          '[class*="percentage"]',
+          '[class*="probability"]',
+          '[class*="progress"]',
+          '[class*="win"]'
+        ];
+        let allPercentages = [];
+        let allText = '';
+        for (const selector of fallbackSelectors) {
+          try {
+            const elements = await page.$$(selector);
+            for (const el of elements) {
+              const text = await page.evaluate(el => el.textContent.trim(), el);
+              if (text) {
+                const nums = text.match(/(\d+)/g);
+                if (nums) {
+                  for (const num of nums) {
+                    const val = parseInt(num);
+                    if (!isNaN(val) && val <= 100) {
+                      allPercentages.push(val);
+                    }
+                  }
+                }
+                allText += ' ' + text;
+              }
+            }
+          } catch (e) {}
+        }
+        if (allPercentages.length >= 2) {
+          prediction.home_probability = allPercentages[0];
+          prediction.away_probability = allPercentages[1];
+          logger.debug(`   ✅ Win probability (fallback): ${prediction.home_probability}% vs ${prediction.away_probability}%`);
+        } else {
+          const percentMatches = allText.match(/(\d+)\%/g);
+          if (percentMatches && percentMatches.length >= 2) {
+            const nums = percentMatches.map(m => parseInt(m));
+            prediction.home_probability = nums[0];
+            prediction.away_probability = nums[1];
+            logger.debug(`   ✅ Win probability (regex): ${prediction.home_probability}% vs ${prediction.away_probability}%`);
+          }
+        }
+      }
+    } catch (error) {
+      logger.debug(`   Error extracting win probability: ${error.message}`);
+    }
+    
+    try {
+      const projSelectors = ['.projected-scores', '.score-projection', '.projection-container'];
+      for (const sel of projSelectors) {
+        try {
+          const container = await page.$(sel);
+          if (container) {
+            logger.debug(`   Found projected scores container: ${sel}`);
+            const rows = await container.$$('.projection-row, .score-row, .row, tr');
+            if (rows.length > 0) {
+              for (const row of rows) {
+                const cells = await row.$$('td, .cell, span');
+                let runRate = null;
+                let score = null;
+                for (const cell of cells) {
+                  const text = await page.evaluate(el => el.textContent.trim(), cell);
+                  if (text) {
+                    const rrMatch = text.match(/^(\d+\.\d+)$/);
+                    if (rrMatch) {
+                      runRate = parseFloat(rrMatch[1]);
+                    }
+                    const scoreMatch = text.match(/^(\d{2,4})$/);
+                    if (scoreMatch) {
+                      score = parseInt(scoreMatch[1]);
+                    }
+                  }
+                }
+                if (runRate !== null && score !== null) {
+                  prediction.projected_scores.push({
+                    run_rate: runRate,
+                    score: score
+                  });
+                }
+              }
+              if (prediction.projected_scores.length > 0) {
+                logger.debug(`   ✅ Found ${prediction.projected_scores.length} projected scores`);
+              }
+            }
+            if (prediction.projected_scores.length === 0) {
+              const text = await page.evaluate(el => el.textContent.trim(), container);
+              const matches = text.match(/(\d+\.\d+)\s*[|:]\s*(\d+)/g);
+              if (matches) {
+                for (const match of matches) {
+                  const parts = match.match(/(\d+\.\d+)\s*[|:]\s*(\d+)/);
+                  if (parts) {
+                    prediction.projected_scores.push({
+                      run_rate: parseFloat(parts[1]),
+                      score: parseInt(parts[2])
+                    });
+                  }
+                }
+                if (prediction.projected_scores.length > 0) {
+                  logger.debug(`   ✅ Found ${prediction.projected_scores.length} projected scores (regex)`);
+                }
+              }
+            }
+            if (prediction.projected_scores.length > 0) break;
+          }
+        } catch (e) {}
+      }
+    } catch (error) {
+      logger.debug(`   Error extracting projected scores: ${error.message}`);
+    }
+    
+    return prediction;
+  }
+
+  // ============================================================
+  // HELPER: EXTRACT TEXT FROM SELECTORS
+  // ============================================================
+  async extractTextFromSelectors(page, element, selectors) {
+    for (const selector of selectors) {
+      try {
+        const el = await element.$(selector);
+        if (el) {
+          const text = await page.evaluate(el => el.textContent.trim(), el);
+          if (text) return text;
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  // ============================================================
+  // PHASE 2: EXTRACT LIVE MATCH DETAILS
+  // ============================================================
+  async extractLiveMatchDetails(discoveredMatches) {
+    logger.info('🔍 Phase 2: Extracting live match details...');
+    
+    const fullMatches = [];
+
+    for (let i = 0; i < discoveredMatches.length; i++) {
+      const discovered = discoveredMatches[i];
+      logger.info(`  📄 Processing live match ${i + 1}/${discoveredMatches.length}: ${discovered.url}`);
+
+      try {
+        await this.page.goto(discovered.url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000
+        });
+
+        await this.page.waitForTimeout(3000);
+
+        const series = await this.extractSeries(this.page);
+        const venue = await this.extractVenue(this.page);
+        const scoreboard = await this.extractScoreboard(this.page);
+        const currentBatsmen = await this.extractCurrentBatsmen(this.page);
+        const currentBowler = await this.extractCurrentBowler(this.page);
+        const overs = await this.extractOversTimeline(this.page);
+        const commentary = await this.extractCommentary(this.page);
+        const prediction = await this.extractPrediction(this.page);
+        const toss = await this.extractToss(this.page);
+        
+        let weather = null;
+        if (venue || series || discovered.team1.name || discovered.team2.name) {
+          logger.info(`    🌤️ Requesting weather for match:`);
+          logger.info(`       Venue: "${venue || 'TBD'}"`);
+          logger.info(`       Series: "${series || 'N/A'}"`);
+          logger.info(`       Teams: ${discovered.team1.name || 'N/A'} vs ${discovered.team2.name || 'N/A'}`);
+          logger.info(`       URL: ${discovered.url}`);
+          
+          weather = await this.getWeatherForVenue(
+            venue,
+            series,
+            '',
+            discovered.team1.name,
+            discovered.team2.name,
+            discovered.url
+          );
+          
+          if (weather) {
+            logger.info(`    ✅ Weather obtained for this match`);
+          } else {
+            logger.warn(`    ❌ No weather available for this match`);
+          }
+        } else {
+          logger.debug(`    ⏭️ No location information available, skipping weather`);
+        }
+
+        let format = 'T20';
+        const titleText = await this.extractTextFromSelectors(this.page, this.page, [
+          'h1', '.match-title', '.title'
+        ]);
+        if (titleText) {
+          if (titleText.includes('ODI')) format = 'ODI';
+          else if (titleText.includes('Test')) format = 'Test';
+          else if (titleText.includes('100B')) format = 'The Hundred';
+        }
+
+        const matchData = {
+          match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          match_url: discovered.url,
+          series: {
+            id: `series_${Date.now()}`,
+            name: series || discovered.series || 'Unknown Series',
+            short_name: series ? series.substring(0, 20) : '',
+            season: new Date().getFullYear().toString()
+          },
+          match: {
+            number: titleText ? (titleText.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B))/i)?.[0] || 'Match') : 'Match',
+            format: format,
+            status: 'Live',
+            start_time: '',
+            current_innings: '',
+            current_ball: scoreboard.current_ball || ''
+          },
+          venue: {
+            id: `venue_${Date.now()}`,
+            name: venue || 'TBD'
+          },
+          teams: {
+            home: {
+              id: this.getTeamId(scoreboard.batting_team.name || discovered.team1.name),
+              name: scoreboard.batting_team.name || discovered.team1.name,
+              short_name: discovered.team1.short || '',
+              logo: discovered.team1.flag || ''
+            },
+            away: {
+              id: this.getTeamId(scoreboard.bowling_team.name || discovered.team2.name),
+              name: scoreboard.bowling_team.name || discovered.team2.name,
+              short_name: discovered.team2.short || '',
+              logo: discovered.team2.flag || ''
+            }
+          },
+          scoreboard: {
+            batting_team: {
+              name: scoreboard.batting_team.name || discovered.team1.name,
+              score: scoreboard.batting_team.score || discovered.team1.score || '',
+              runs: scoreboard.batting_team.runs,
+              wickets: scoreboard.batting_team.wickets,
+              overs: scoreboard.batting_team.overs || discovered.team1.overs || ''
+            },
+            bowling_team: {
+              name: scoreboard.bowling_team.name || discovered.team2.name
+            },
+            target: scoreboard.target,
+            required_runs: scoreboard.required_runs,
+            required_balls: scoreboard.required_balls,
+            crr: scoreboard.crr,
+            rrr: scoreboard.rrr,
+            current_ball: scoreboard.current_ball || ''
+          },
+          current_batsmen: currentBatsmen,
+          current_bowler: currentBowler,
+          overs: overs,
+          commentary: commentary,
+          prediction: prediction,
+          toss: toss,
+          weather: weather || null,
+          countdown: null
+        };
+
+        fullMatches.push(matchData);
+        
+        logger.info(`    ✅ Live Match: ${matchData.teams.home.name} (${matchData.scoreboard.batting_team.score}) vs ${matchData.teams.away.name}`);
+        logger.info(`       Venue: ${matchData.venue.name || 'N/A'}`);
+        logger.info(`       Series: ${matchData.series.name}`);
+        logger.info(`       Current Ball: ${matchData.match.current_ball || 'N/A'}`);
+        logger.info(`       Score: ${matchData.scoreboard.batting_team.score || 'N/A'}`);
+        logger.info(`       Runs: ${matchData.scoreboard.batting_team.runs || 'N/A'}`);
+        logger.info(`       Wickets: ${matchData.scoreboard.batting_team.wickets || 'N/A'}`);
+        logger.info(`       Overs: ${matchData.scoreboard.batting_team.overs || 'N/A'}`);
+        logger.info(`       Overs Timeline: ${matchData.overs.length}`);
+        logger.info(`       Toss: ${matchData.toss.status || 'Not Started'}`);
+        logger.info(`       Weather: ${weather ? `${weather.temperature}°C, ${weather.condition}` : 'Not Available'}`);
+
+        deepLog(`PHASE 2 - Live Match ${i + 1} Extracted Data`, matchData);
+
+        if (i < discoveredMatches.length - 1) {
+          await this.page.waitForTimeout(1000);
+        }
+
+      } catch (error) {
+        logger.error(`    ❌ Error processing live match ${i + 1}: ${error.message}`);
+        this.stats.errors++;
+        
+        const fallbackMatch = {
+          match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          match_url: discovered.url,
+          series: {
+            id: `series_${Date.now()}`,
+            name: discovered.series || 'Unknown Series',
+            short_name: '',
+            season: new Date().getFullYear().toString()
+          },
+          match: {
+            number: 'Match',
+            format: 'T20',
+            status: 'Live',
+            start_time: '',
+            current_innings: '',
+            current_ball: ''
+          },
+          venue: {
+            id: `venue_${Date.now()}`,
+            name: 'TBD'
+          },
+          teams: {
+            home: {
+              id: this.getTeamId(discovered.team1.name),
+              name: discovered.team1.name || 'Team 1',
+              short_name: discovered.team1.short || 'T1',
+              logo: discovered.team1.flag || ''
+            },
+            away: {
+              id: this.getTeamId(discovered.team2.name),
+              name: discovered.team2.name || 'Team 2',
+              short_name: discovered.team2.short || 'T2',
+              logo: discovered.team2.flag || ''
+            }
+          },
+          scoreboard: {
+            batting_team: { name: discovered.team1.name, score: discovered.team1.score || '', runs: null, wickets: null, overs: discovered.team1.overs || '' },
+            bowling_team: { name: discovered.team2.name },
+            target: null,
+            required_runs: null,
+            required_balls: null,
+            crr: null,
+            rrr: null,
+            current_ball: ''
+          },
+          current_batsmen: [],
+          current_bowler: { name: '', overs: '', runs: null, wickets: null },
+          overs: [],
+          commentary: [],
+          prediction: { home_probability: null, away_probability: null, projected_scores: [] },
+          toss: { status: 'Not Started' },
+          weather: null,
+          countdown: null
+        };
+        
+        fullMatches.push(fallbackMatch);
+        deepLog(`PHASE 2 - Live Match ${i + 1} FALLBACK Data`, fallbackMatch);
+      }
+    }
+
+    deepLog(`PHASE 2 - All ${fullMatches.length} live matches collected`, fullMatches);
+    return fullMatches;
+  }
+
+  // ============================================================
+  // GET TEAM ID FROM NAME
+  // ============================================================
+  getTeamId(teamName) {
+    if (!teamName) return `team_${Date.now()}`;
+    
+    for (const [name, id] of Object.entries(this.teamIdMap)) {
+      if (teamName.includes(name) || name.includes(teamName)) {
+        return id;
+      }
+    }
+    
+    const cleanName = teamName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    return `team_${cleanName}`;
+  }
+
+  // ============================================================
+  // LOG STATISTICS
+  // ============================================================
+  logStatistics() {
+    logger.info(`📊 Live Scraper Statistics:`);
+    logger.info(`   Discovered: ${this.stats.discovered}`);
+    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
+    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
+    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
+    logger.info(`   Errors: ${this.stats.errors}`);
+    logger.info(`   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`);
+  }
+}
+
+module.exports = LiveScraper;

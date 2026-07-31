@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cricket-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - cricket-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: cricket-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - cricket-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: cricket-app
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${PORT}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - CRICKET_BASE_URL=${CRICKET_BASE_URL}
+      - SCRAPER_TIMEOUT=${SCRAPER_TIMEOUT}
+      - MAX_RETRIES=${MAX_RETRIES}
+      - RETRY_BACKOFF_BASE=${RETRY_BACKOFF_BASE}
+      - MAX_CONCURRENT_SCRAPES=${MAX_CONCURRENT_SCRAPES}
+      - CACHE_TTL_LIVE=${CACHE_TTL_LIVE}
+      - CACHE_TTL_COMMENTARY=${CACHE_TTL_COMMENTARY}
+      - CACHE_TTL_FIXTURES=${CACHE_TTL_FIXTURES}
+      - CACHE_TTL_POINTS=${CACHE_TTL_POINTS}
+      - CACHE_TTL_NEWS=${CACHE_TTL_NEWS}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_MAX_FILES=${LOG_MAX_FILES}
+      - LOG_MAX_SIZE=${LOG_MAX_SIZE}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./src:/app/src
+    networks:
+      - cricket-network
+    restart: unless-stopped
+    command: npm run pm2:start
+
+networks:
+  cricket-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
