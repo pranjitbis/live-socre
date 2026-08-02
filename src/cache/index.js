@@ -129,113 +129,133 @@ async function closeRedis() {
   memoryCache.clear();
 }
 
-const cache = {
-  async get(key) {
-    try {
-      const client = getRedisClient();
-      const value = await client.get(key);
-      if (value) {
-        return typeof value === 'string' ? JSON.parse(value) : value;
-      }
-      return null;
-    } catch (error) {
-      logger.debug('Cache get error:', { key, error: error.message });
-      // Try memory cache fallback
-      const memValue = memoryCache.get(key);
-      return memValue || null;
-    }
-  },
+// ============================================================
+// EXPORT CACHE METHODS DIRECTLY
+// ============================================================
 
-  async set(key, value, ttl = 3600) {
-    try {
-      const client = getRedisClient();
-      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-      if (ttl) {
-        await client.set(key, stringValue, { EX: ttl });
-      } else {
-        await client.set(key, stringValue);
-      }
-      // Also store in memory for fallback
-      memoryCache.set(key, stringValue);
-      return true;
-    } catch (error) {
-      logger.debug('Cache set error:', { key, error: error.message });
-      // Store in memory fallback
-      const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-      memoryCache.set(key, stringValue);
-      return false;
+// Export individual functions for direct access
+async function get(key) {
+  try {
+    const client = getRedisClient();
+    const value = await client.get(key);
+    if (value) {
+      return typeof value === 'string' ? JSON.parse(value) : value;
     }
-  },
+    return null;
+  } catch (error) {
+    logger.debug('Cache get error:', { key, error: error.message });
+    // Try memory cache fallback
+    const memValue = memoryCache.get(key);
+    return memValue || null;
+  }
+}
 
-  async delete(key) {
-    try {
-      const client = getRedisClient();
-      await client.del(key);
-      memoryCache.delete(key);
-      return true;
-    } catch (error) {
-      logger.debug('Cache delete error:', { key, error: error.message });
-      memoryCache.delete(key);
-      return false;
+async function set(key, value, ttl = 3600) {
+  try {
+    const client = getRedisClient();
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    if (ttl) {
+      await client.set(key, stringValue, { EX: ttl });
+    } else {
+      await client.set(key, stringValue);
     }
-  },
+    // Also store in memory for fallback
+    memoryCache.set(key, stringValue);
+    return true;
+  } catch (error) {
+    logger.debug('Cache set error:', { key, error: error.message });
+    // Store in memory fallback
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    memoryCache.set(key, stringValue);
+    return false;
+  }
+}
 
-  async clear(pattern = '*') {
-    try {
-      const client = getRedisClient();
-      const keys = await client.keys(pattern);
-      if (keys.length > 0) {
-        await Promise.all(keys.map((key) => client.del(key)));
-      }
-      // Clear memory cache
-      if (pattern === '*') {
-        memoryCache.clear();
-      } else {
-        const patternReg = new RegExp(pattern.replace('*', '.*'));
-        for (const key of memoryCache.keys()) {
-          if (patternReg.test(key)) {
-            memoryCache.delete(key);
-          }
+async function del(key) {
+  try {
+    const client = getRedisClient();
+    await client.del(key);
+    memoryCache.delete(key);
+    return true;
+  } catch (error) {
+    logger.debug('Cache delete error:', { key, error: error.message });
+    memoryCache.delete(key);
+    return false;
+  }
+}
+
+async function clear(pattern = '*') {
+  try {
+    const client = getRedisClient();
+    const keys = await client.keys(pattern);
+    if (keys.length > 0) {
+      await Promise.all(keys.map((key) => client.del(key)));
+    }
+    // Clear memory cache
+    if (pattern === '*') {
+      memoryCache.clear();
+    } else {
+      const patternReg = new RegExp(pattern.replace('*', '.*'));
+      for (const key of memoryCache.keys()) {
+        if (patternReg.test(key)) {
+          memoryCache.delete(key);
         }
       }
-      return keys.length;
-    } catch (error) {
-      logger.debug('Cache clear error:', { pattern, error: error.message });
-      return 0;
     }
-  },
+    return keys.length;
+  } catch (error) {
+    logger.debug('Cache clear error:', { pattern, error: error.message });
+    return 0;
+  }
+}
 
-  async getOrSet(key, fetchFn, ttl = 3600) {
-    try {
-      const cached = await this.get(key);
-      if (cached !== null && cached !== undefined) {
-        return cached;
-      }
-
-      const value = await fetchFn();
-      if (value !== null && value !== undefined) {
-        await this.set(key, value, ttl);
-      }
-      return value;
-    } catch (error) {
-      logger.debug('Cache getOrSet error:', { key, error: error.message });
-      return await fetchFn();
+async function getOrSet(key, fetchFn, ttl = 3600) {
+  try {
+    const cached = await get(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
     }
-  },
 
-  async getStatus() {
-    return {
-      connected: isConnected,
-      memoryMode: memoryMode,
-      keyPrefix: config.redis?.keyPrefix || 'cricket:',
-      memorySize: memoryCache.size
-    };
-  },
-};
+    const value = await fetchFn();
+    if (value !== null && value !== undefined) {
+      await set(key, value, ttl);
+    }
+    return value;
+  } catch (error) {
+    logger.debug('Cache getOrSet error:', { key, error: error.message });
+    return await fetchFn();
+  }
+}
+
+async function getStatus() {
+  return {
+    connected: isConnected,
+    memoryMode: memoryMode,
+    keyPrefix: config.redis?.keyPrefix || 'cricket:',
+    memorySize: memoryCache.size
+  };
+}
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
+  // Initialization
   initRedis,
-  getRedisClient,
   closeRedis,
-  cache,
+  getRedisClient,
+  
+  // Core methods
+  get,
+  set,
+  del,
+  clear,
+  getOrSet,
+  getStatus,
+  
+  // Backward compatibility
+  init: initRedis,
+  close: closeRedis,
+  healthCheck: getStatus,
 };

@@ -27,17 +27,37 @@ class UpcomingScraper extends BaseCrexScraper {
   constructor() {
     super();
     this.selectors = UPCOMING_SELECTORS;
+    
+    // Worker pool configuration
+    this.maxWorkers = 4;
+    this.workerTimeout = 30000;
+    
+    // Statistics
     this.stats = {
       discovered: 0,
-      detailed: 0,
-      merged: 0,
-      errors: 0,
-      skippedLive: 0,
-      skippedCompleted: 0,
-      skippedOther: 0,
-      weatherSuccess: 0,
-      weatherFailed: 0
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      retried: 0,
+      duplicateRemoved: 0,
+      totalMatches: 0,
+      workerStats: {},
+      startTime: null
     };
+    
+    // Processing queues
+    this.processingQueue = [];
+    this.processedUrls = new Set();
+    this.failedUrls = new Set();
+    this.retryQueue = [];
+    this.results = [];
+    this.failedMatches = [];
+    
+    // Worker management
+    this.workers = [];
+    this.isRunning = false;
+    this.browser = null;
+    this.context = null;
     
     // Weather caches
     this.geoCache = new Map();
@@ -69,7 +89,7 @@ class UpcomingScraper extends BaseCrexScraper {
       99: { condition: 'Thunderstorm', icon: '11d' }
     };
     
-    // Country mapping for team names
+    // Country mapping
     this.countryMap = {
       'India': 'India',
       'England': 'England',
@@ -88,7 +108,7 @@ class UpcomingScraper extends BaseCrexScraper {
       'Guyana': 'Guyana'
     };
     
-    // Timezone mapping by venue/city
+    // Timezone mapping
     this.timezoneMap = {
       'London': 'Europe/London',
       'Birmingham': 'Europe/London',
@@ -165,8 +185,9 @@ class UpcomingScraper extends BaseCrexScraper {
   }
 
   // ============================================================
-  // GET TIMEZONE FROM VENUE
+  // HELPER METHODS
   // ============================================================
+
   getTimezoneFromVenue(venue) {
     if (!venue) return 'Europe/London';
     
@@ -186,80 +207,35 @@ class UpcomingScraper extends BaseCrexScraper {
       }
     }
     
-    for (const [country, timezone] of Object.entries({
-      'UK': 'Europe/London',
-      'England': 'Europe/London',
-      'India': 'Asia/Kolkata',
-      'Australia': 'Australia/Sydney',
-      'Pakistan': 'Asia/Karachi',
-      'Sri Lanka': 'Asia/Colombo',
-      'Bangladesh': 'Asia/Dhaka',
-      'Nepal': 'Asia/Kathmandu',
-      'Namibia': 'Africa/Windhoek',
-      'South Africa': 'Africa/Johannesburg',
-      'West Indies': 'America/Port_of_Spain',
-      'New Zealand': 'Pacific/Auckland',
-      'UAE': 'Asia/Dubai',
-      'Guyana': 'America/Guyana'
-    })) {
-      if (venue.includes(country)) {
-        return timezone;
-      }
-    }
-    
     return 'Europe/London';
   }
 
-  // ============================================================
-  // GENERATE TEAM ID DYNAMICALLY
-  // ============================================================
   generateTeamId(teamName) {
     if (!teamName) return `team_${Date.now()}`;
-    
-    // Convert to lowercase, replace spaces with underscores
     let id = teamName.toLowerCase()
       .replace(/\s+/g, '_')
       .replace(/[^a-z0-9_]/g, '')
       .replace(/_+/g, '_')
       .replace(/^_|_$/g, '');
-    
     return `team_${id}`;
   }
 
-  // ============================================================
-  // CLEAN PLAYER NAME - Preserve (C), (WK), ✈️
-  // ============================================================
   cleanPlayerName(name) {
     if (!name) return '';
-    
-    // Normalize spaces
     let cleaned = name.replace(/\s+/g, ' ').trim();
-    
-    // Add space before ✈️ if missing
     cleaned = cleaned.replace(/✈️/g, ' ✈️').replace(/\s+/g, ' ').trim();
-    
-    // Ensure spaces around (C) and (WK)
     cleaned = cleaned.replace(/\(C\)/g, ' (C) ').replace(/\s+/g, ' ').trim();
     cleaned = cleaned.replace(/\(WK\)/g, ' (WK) ').replace(/\s+/g, ' ').trim();
-    
-    // Remove duplicate spaces
     cleaned = cleaned.replace(/\s+/g, ' ').trim();
-    
-    // Ensure proper spacing for multiple markers
     cleaned = cleaned.replace(/\)\s*\(/g, ') (').replace(/\s+/g, ' ').trim();
-    
     return cleaned;
   }
 
-  // ============================================================
-  // BUILD LOCATION CANDIDATES
-  // ============================================================
   buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name) {
     const candidates = new Set();
     
     if (venue && venue !== 'TBD' && venue.length > 2) {
       candidates.add(venue);
-      
       const cleanedVenue = venue
         .replace(/Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi, '')
         .replace(/\s+/g, ' ')
@@ -267,16 +243,12 @@ class UpcomingScraper extends BaseCrexScraper {
       if (cleanedVenue !== venue && cleanedVenue.length > 2) {
         candidates.add(cleanedVenue);
       }
-      
       if (venue.includes(',')) {
         const parts = venue.split(',').map(p => p.trim());
         parts.forEach(part => {
-          if (part.length > 2) {
-            candidates.add(part);
-          }
+          if (part.length > 2) candidates.add(part);
         });
       }
-      
       const cityMatch = venue.match(/,?\s*([A-Za-z\s]+)$/);
       if (cityMatch && cityMatch[1] && cityMatch[1].length > 2) {
         candidates.add(cityMatch[1].trim());
@@ -285,77 +257,25 @@ class UpcomingScraper extends BaseCrexScraper {
     
     if (series) {
       for (const [country] of Object.entries(this.countryMap)) {
-        if (series.includes(country)) {
-          candidates.add(country);
-        }
-      }
-      
-      const countryPatterns = [
-        /India\s+Tour/i,
-        /England\s+Tour/i,
-        /Australia\s+Tour/i,
-        /Pakistan\s+Tour/i,
-        /New\s+Zealand\s+Tour/i,
-        /South\s+Africa\s+Tour/i,
-        /West\s+Indies\s+Tour/i,
-        /Sri\s+Lanka\s+Tour/i,
-        /Bangladesh\s+Tour/i,
-        /Afghanistan\s+Tour/i,
-        /Zimbabwe\s+Tour/i,
-        /Ireland\s+Tour/i,
-        /Nepal\s+Tour/i,
-        /Namibia\s+Tour/i,
-        /Guyana\s+Tour/i
-      ];
-      
-      for (const pattern of countryPatterns) {
-        if (pattern.test(series)) {
-          const match = series.match(pattern);
-          if (match) {
-            const country = match[0].replace('Tour', '').trim();
-            candidates.add(country);
-          }
-        }
-      }
-      
-      const vsMatch = series.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
-      if (vsMatch) {
-        const country1 = vsMatch[1].trim();
-        const country2 = vsMatch[2].trim();
-        if (country1 && country1.length > 2) candidates.add(country1);
-        if (country2 && country2.length > 2) candidates.add(country2);
-      }
-      
-      const yearMatch = series.match(/\b(20\d{2})\b/);
-      if (yearMatch) {
-        const location = series.replace(yearMatch[0], '').trim();
-        if (location && location.length > 2) {
-          candidates.add(location);
-        }
+        if (series.includes(country)) candidates.add(country);
       }
     }
     
     if (matchTitle) {
       for (const [country] of Object.entries(this.countryMap)) {
-        if (matchTitle.includes(country)) {
-          candidates.add(country);
-        }
+        if (matchTitle.includes(country)) candidates.add(country);
       }
     }
     
     if (team1Name) {
       for (const [key, country] of Object.entries(this.countryMap)) {
-        if (team1Name.includes(key)) {
-          candidates.add(country);
-        }
+        if (team1Name.includes(key)) candidates.add(country);
       }
     }
     
     if (team2Name) {
       for (const [key, country] of Object.entries(this.countryMap)) {
-        if (team2Name.includes(key)) {
-          candidates.add(country);
-        }
+        if (team2Name.includes(key)) candidates.add(country);
       }
     }
     
@@ -367,39 +287,7 @@ class UpcomingScraper extends BaseCrexScraper {
       }
     }
     
-    const venueCandidates = [];
-    const cityCandidates = [];
-    const seriesCandidates = [];
-    const countryCandidates = [];
-    const teamCandidates = [];
-    
-    for (const candidate of validCandidates) {
-      const isCountry = Object.values(this.countryMap).some(c => 
-        candidate.toLowerCase() === c.toLowerCase() || 
-        candidate.includes(c)
-      );
-      
-      if (isCountry && candidate.length <= 20) {
-        countryCandidates.push(candidate);
-      } else if (candidate.includes(',')) {
-        venueCandidates.push(candidate);
-      } else if (candidate.match(/[A-Z][a-z]+\s+[A-Z][a-z]+/)) {
-        venueCandidates.push(candidate);
-      } else if (candidate.match(/[A-Z][a-z]+/)) {
-        cityCandidates.push(candidate);
-      } else {
-        seriesCandidates.push(candidate);
-      }
-    }
-    
-    const allCandidates = [
-      ...venueCandidates,
-      ...cityCandidates,
-      ...seriesCandidates,
-      ...countryCandidates,
-      ...teamCandidates
-    ];
-    
+    const allCandidates = Array.from(validCandidates);
     const seen = new Set();
     const uniqueCandidates = [];
     for (const candidate of allCandidates) {
@@ -413,23 +301,16 @@ class UpcomingScraper extends BaseCrexScraper {
     return uniqueCandidates;
   }
 
-  // ============================================================
-  // GET COORDINATES
-  // ============================================================
   async getCoordinates(location) {
     const cacheKey = location.toLowerCase().trim();
     
     if (this.geoCache.has(cacheKey)) {
-      logger.debug(`    ✅ Coordinates from cache for: ${location}`);
       return this.geoCache.get(cacheKey);
     }
 
     try {
       const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-      
-      const response = await axios.get(geocodeUrl, {
-        timeout: 10000
-      });
+      const response = await axios.get(geocodeUrl, { timeout: 10000 });
       
       if (response.data.results && response.data.results.length > 0) {
         const result = response.data.results[0];
@@ -440,63 +321,35 @@ class UpcomingScraper extends BaseCrexScraper {
           country: result.country
         };
         this.geoCache.set(cacheKey, coords);
-        logger.info(`    ✅ Geocoded "${location}" → ${result.name}, ${result.country} (${result.latitude}, ${result.longitude})`);
         return coords;
-      } else {
-        logger.debug(`    ⚠️ No results for location: "${location}"`);
-        return null;
       }
+      return null;
     } catch (error) {
-      logger.debug(`    ⚠️ Geocoding failed for "${location}": ${error.message}`);
       return null;
     }
   }
 
-  // ============================================================
-  // WEATHER INTEGRATION
-  // ============================================================
   async getWeather(venue, series, matchTitle, team1Name, team2Name) {
     const candidates = this.buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name);
     
     if (candidates.length === 0) {
-      logger.warn(`    ❌ No location candidates found for weather`);
       return null;
-    }
-
-    logger.info(`    🌤️ Weather requested with ${candidates.length} location candidates:`);
-    candidates.slice(0, 10).forEach((c, i) => {
-      logger.info(`       ${i + 1}. "${c}"`);
-    });
-    if (candidates.length > 10) {
-      logger.info(`       ... and ${candidates.length - 10} more`);
     }
 
     for (let i = 0; i < candidates.length; i++) {
       const location = candidates[i];
-      logger.debug(`    🔍 Trying location ${i + 1}/${candidates.length}: "${location}"`);
       
       try {
         const coords = await this.getCoordinates(location);
-        
-        if (!coords) {
-          logger.debug(`    ⚠️ No coordinates for "${location}", trying next`);
-          continue;
-        }
+        if (!coords) continue;
 
         const { lat: latitude, lon: longitude } = coords;
-
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=auto`;
         
-        const weatherResponse = await axios.get(weatherUrl, {
-          timeout: 10000
-        });
-
+        const weatherResponse = await axios.get(weatherUrl, { timeout: 10000 });
         const data = weatherResponse.data;
         
-        if (!data.current) {
-          logger.debug(`    ⚠️ No weather data for "${location}", trying next`);
-          continue;
-        }
+        if (!data.current) continue;
 
         const current = data.current;
         const weatherCode = current.weather_code;
@@ -519,70 +372,81 @@ class UpcomingScraper extends BaseCrexScraper {
         };
 
         this.stats.weatherSuccess++;
-        
-        logger.info(`    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`);
-        logger.info(`       (Original venue: "${venue || 'N/A'}")`);
         return weather;
 
       } catch (error) {
-        logger.debug(`    ❌ Weather API error for "${location}": ${error.message}`);
         continue;
       }
     }
 
     this.stats.weatherFailed++;
-    logger.warn(`    ❌ No valid weather location found after all ${candidates.length} retries.`);
-    logger.warn(`       Venue: "${venue || 'N/A'}"`);
-    logger.warn(`       Series: "${series || 'N/A'}"`);
-    logger.warn(`       Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'}`);
     return null;
   }
 
   // ============================================================
   // MAIN SCRAPE METHOD
   // ============================================================
+
   async scrapeUpcoming() {
-    logger.info('🚀 Starting upcoming matches scraper (Two-Phase Approach)');
+    logger.info('🚀 Starting upcoming matches scraper (Worker Pool Architecture)');
+    logger.info(`📋 Max Workers: ${this.maxWorkers}`);
+    
+    this.stats.startTime = Date.now();
 
     try {
-      await this.initializeBrowser();
+      // Step 1: Initialize shared browser
+      await this.initializeSharedBrowser();
       
+      // Step 2: Discover all upcoming match URLs
       const discoveredMatches = await this.discoverMatches();
       this.stats.discovered = discoveredMatches.length;
       
       if (discoveredMatches.length === 0) {
         logger.warn('⚠️ No upcoming matches discovered');
         await this.closeBrowser();
-        const result = {
+        return {
           success: false,
           timestamp: new Date().toISOString(),
-          data: []
+          data: [],
+          message: 'No upcoming matches found'
         };
-        deepLog('SCRAPER RESULT - No matches found', result);
-        return result;
       }
 
-      logger.info(`📋 Phase 1 complete: Discovered ${discoveredMatches.length} upcoming matches`);
-      deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} matches`, discoveredMatches);
+      logger.info(`📋 Discovered ${discoveredMatches.length} upcoming matches`);
 
-      const fullMatches = await this.extractMatchDetails(discoveredMatches);
-      this.stats.detailed = fullMatches.length;
+      // Step 3: Remove duplicate URLs
+      const uniqueMatches = this.removeDuplicates(discoveredMatches);
+      this.stats.duplicateRemoved = discoveredMatches.length - uniqueMatches.length;
+      
+      logger.info(`🗑️ Removed ${this.stats.duplicateRemoved} duplicate URLs`);
+      logger.info(`📋 Unique matches: ${uniqueMatches.length}`);
 
-      logger.info(`📋 Phase 2 complete: Extracted details for ${fullMatches.length} matches`);
+      // Step 4: Create shared queue
+      this.processingQueue = [...uniqueMatches];
+      this.stats.totalMatches = this.processingQueue.length;
 
+      // Step 5-7: Process with worker pool
+      const results = await this.processWithWorkerPool();
+
+      // Merge results
+      const finalData = this.mergeResults(results);
+      
+      // Close browser
       await this.closeBrowser();
       this.logStatistics();
+
+      logger.info(`✅ Completed processing ${finalData.length} upcoming matches`);
 
       const result = {
         success: true,
         timestamp: new Date().toISOString(),
-        data: fullMatches
+        data: finalData
       };
 
-      deepLog('✅ FINAL SCRAPER RESULT - Complete JSON', result);
+      deepLog('✅ FINAL UPCOMING SCRAPER RESULT', result);
       
-      if (fullMatches.length > 0) {
-        deepLog('📋 SAMPLE MATCH - First match in detail', fullMatches[0]);
+      if (finalData.length > 0) {
+        deepLog('📋 SAMPLE UPCOMING MATCH - First match', finalData[0]);
       }
 
       return result;
@@ -590,366 +454,499 @@ class UpcomingScraper extends BaseCrexScraper {
     } catch (error) {
       logger.error(`❌ UpcomingScraper error: ${error.message}`);
       await this.closeBrowser();
-      const result = {
+      return {
         success: false,
         timestamp: new Date().toISOString(),
-        data: []
+        data: [],
+        error: error.message
       };
-      deepLog('❌ SCRAPER ERROR RESULT', result);
-      return result;
     }
   }
 
   // ============================================================
-  // PHASE 1: DISCOVER MATCHES
+  // STEP 1: INITIALIZE SHARED BROWSER
   // ============================================================
-  async discoverMatches() {
-    logger.info('🔍 Phase 1: Discovering upcoming matches from homepage...');
 
+  async initializeSharedBrowser() {
+    logger.info('🔧 Initializing shared browser for worker pool...');
+    
     try {
-      await this.page.goto(this.selectors.PAGE_URL, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
+      const { chromium } = require('playwright');
+      
+      this.browser = await chromium.launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-web-security',
+          '--window-size=1920,1080',
+          '--max-old-space-size=2048'
+        ]
       });
 
-      await this.page.waitForTimeout(3000);
-      
-      const debugDir = path.join(process.cwd(), 'debug');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
-      }
-      
-      try {
-        await this.page.screenshot({ path: path.join(debugDir, 'upcoming-page-screenshot.png'), fullPage: true });
-        logger.info(`💾 Saved screenshot to debug/upcoming-page-screenshot.png`);
-      } catch (e) {
-        logger.warn(`Could not save screenshot: ${e.message}`);
-      }
+      this.context = await this.browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        extraHTTPHeaders: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        }
+      });
 
-      try {
-        const pageHtml = await this.page.content();
-        fs.writeFileSync(path.join(debugDir, 'upcoming-page.html'), pageHtml);
-        logger.info(`💾 Saved page HTML to debug/upcoming-page.html for inspection`);
-      } catch (e) {
-        logger.warn(`Could not save HTML: ${e.message}`);
-      }
-
+      logger.info('✅ Shared browser initialized successfully');
+      
     } catch (error) {
-      logger.error(`❌ Failed to load homepage: ${error.message}`);
-      return [];
+      logger.error('Failed to initialize shared browser:', error);
+      throw error;
     }
+  }
 
-    const result = await this.page.evaluate(() => {
-      const matches = [];
-      const cards = document.querySelectorAll('.live-card');
-      const skipped = {
-        completed: [],
-        live: [],
-        other: []
-      };
+  // ============================================================
+  // STEP 2: DISCOVER MATCHES
+  // ============================================================
+
+  async discoverMatches() {
+    logger.info('🔍 Discovering upcoming matches...');
+
+    const page = await this.context.newPage();
+    
+    try {
+      // Try both URLs
+      const urls = [
+        'https://crex.com/cricket-schedule',
+        'https://crex.com/upcoming-matches',
+        'https://crex.com'
+      ];
       
-      const getText = (el) => {
-        if (!el) return '';
-        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
-      };
+      let success = false;
+      let html = '';
+      
+      for (const url of urls) {
+        try {
+          logger.info(`  Trying: ${url}`);
+          await page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 15000
+          });
+          
+          // Wait for content
+          await page.waitForTimeout(2000);
+          
+          html = await page.content();
+          
+          // Check if we have any match cards
+          const hasCards = await page.evaluate(() => {
+            const cards = document.querySelectorAll('.live-card, .score-card, .match-card, .match-container, .team-innig');
+            return cards.length > 0;
+          });
+          
+          if (hasCards) {
+            success = true;
+            logger.info(`  ✅ Found matches on: ${url}`);
+            break;
+          }
+          
+        } catch (error) {
+          logger.warn(`  ⚠️ Failed to load ${url}: ${error.message}`);
+        }
+      }
+      
+      if (!success) {
+        logger.error('❌ Could not find any match cards on any URL');
+        await page.close();
+        return [];
+      }
 
-      const cleanText = (text) => {
-        if (!text) return '';
-        return text.replace(/\s+/g, ' ').trim();
-      };
+      // Save debug HTML
+      try {
+        const debugDir = path.join(process.cwd(), 'debug');
+        if (!fs.existsSync(debugDir)) {
+          fs.mkdirSync(debugDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(debugDir, 'upcoming-page.html'), html);
+        logger.info(`💾 Saved page HTML to debug/upcoming-page.html`);
+      } catch (e) {}
 
-      const getMatchUrl = (card) => {
-        const links = card.querySelectorAll('a[href*="cricket-live-score"]');
-        for (const link of links) {
-          const href = link.getAttribute('href');
-          if (href && href.includes('cricket-live-score')) {
-            if (href.startsWith('https://')) {
-              return href;
-            } else if (href.startsWith('/')) {
-              return `https://crex.com${href}`;
-            } else {
+      const result = await page.evaluate(() => {
+        const matches = [];
+        const cards = document.querySelectorAll('.live-card, .score-card, .match-card, .match-container, .team-innig');
+        
+        const getText = (el) => {
+          if (!el) return '';
+          return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+        };
+
+        const cleanText = (text) => {
+          if (!text) return '';
+          return text.replace(/\s+/g, ' ').trim();
+        };
+
+        const getMatchUrl = (card) => {
+          const links = card.querySelectorAll('a[href*="cricket-live-score"]');
+          for (const link of links) {
+            const href = link.getAttribute('href');
+            if (href && href.includes('cricket-live-score')) {
+              if (href.startsWith('https://')) return href;
+              if (href.startsWith('/')) return `https://crex.com${href}`;
               return `https://crex.com/${href}`;
             }
           }
-        }
-        return '';
-      };
+          return '';
+        };
 
-      const isCompletedMatch = (cardText, url) => {
-        const completedIndicators = [
-          'Summary', 'won by', 'Match Won', 'Player of the Match',
-          'Result', 'Innings Break', 'Stumps', 'Match Summary', 'Match Ended', 'completed'
-        ];
-        
-        for (const indicator of completedIndicators) {
-          if (cardText.includes(indicator)) return true;
-        }
-        
-        if (url && url.includes('summary')) return true;
-        
-        const scorePattern = /\d{1,3}[-\/]\d{1,2}\s*\([\d.]+\s*overs?\)/i;
-        if (scorePattern.test(cardText)) {
-          const resultWords = ['won', 'result', 'summary', 'completed'];
-          for (const word of resultWords) {
-            if (cardText.toLowerCase().includes(word)) return true;
-          }
-        }
-        
-        return false;
-      };
-
-      const isLiveMatch = (cardText) => {
-        const liveIndicators = [
-          'Live', 'LIVE', 'Need', 'Target', 'CRR', 'RRR',
-          'Run Rate', 'Probability', 'Projected Score', 'Commentary',
-          'Current Run Rate', 'Required Run Rate'
-        ];
-        
-        for (const indicator of liveIndicators) {
-          if (cardText.includes(indicator)) return true;
-        }
-        return false;
-      };
-
-      const isUpcomingMatch = (cardText) => {
-        const timePatterns = [
-          /\d{1,2}:\d{2}\s*(?:AM|PM)/i,
-          /\d{1,2}\s*(?:AM|PM)/i,
-          /\d+[mh]\s*\d+[s]?/i,
-          /\d+[mh]/i
-        ];
-        
-        for (const pattern of timePatterns) {
-          if (pattern.test(cardText)) return true;
-        }
-        
-        const upcomingIndicators = ['Starts in', 'Starting in', 'Match Starts', 'Today', 'Tomorrow'];
-        for (const indicator of upcomingIndicators) {
-          if (cardText.includes(indicator)) return true;
-        }
-        
-        return false;
-      };
-
-      cards.forEach((card) => {
-        const cardText = getText(card);
-        const matchUrl = getMatchUrl(card);
-        
-        if (!matchUrl) return;
-        
-        if (cardText.includes('Advertisement') || 
-            cardText.includes('News') || 
-            cardText.includes('Video') || 
-            cardText.includes('Photo') ||
-            cardText.includes('Podcast')) {
-          return;
-        }
-
-        if (isCompletedMatch(cardText, matchUrl)) {
-          skipped.completed.push({ text: cardText.substring(0, 100), url: matchUrl });
-          return;
-        }
-
-        if (isLiveMatch(cardText)) {
-          skipped.live.push({ text: cardText.substring(0, 100), url: matchUrl });
-          return;
-        }
-
-        if (!isUpcomingMatch(cardText)) {
-          skipped.other.push({ text: cardText.substring(0, 100), url: matchUrl });
-          return;
-        }
-
-        let team1Name = '';
-        let team2Name = '';
-
-        const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
-        if (vsMatch) {
-          team1Name = cleanText(vsMatch[1]);
-          team2Name = cleanText(vsMatch[2]);
-        }
-
-        if (!team1Name || !team2Name) {
-          const vsInParen = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)\s*\(/i);
-          if (vsInParen) {
-            team1Name = cleanText(vsInParen[1]);
-            team2Name = cleanText(vsInParen[2]);
-          }
-        }
-
-        if (!team1Name || !team2Name) {
-          const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
-          const teamNames = [];
+        cards.forEach((card) => {
+          const cardText = getText(card);
+          const matchUrl = getMatchUrl(card);
           
-          for (const selector of teamSelectors) {
-            const elements = card.querySelectorAll(selector);
-            elements.forEach(el => {
+          if (!matchUrl) return;
+          
+          if (cardText.includes('Advertisement') || 
+              cardText.includes('News') || 
+              cardText.includes('Video')) {
+            return;
+          }
+
+          let team1Name = '';
+          let team2Name = '';
+
+          // Try to extract team names from text
+          const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+          if (vsMatch) {
+            team1Name = cleanText(vsMatch[1]);
+            team2Name = cleanText(vsMatch[2]);
+          }
+
+          // If not found, try team selectors
+          if (!team1Name || !team2Name) {
+            const teamNames = [];
+            const teamElements = card.querySelectorAll('.team-name, .teamName, .name, .team, .cb-team-name');
+            teamElements.forEach(el => {
               const text = cleanText(getText(el));
               if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
                 teamNames.push(text);
               }
             });
-            if (teamNames.length >= 2) break;
+            if (teamNames.length >= 2) {
+              team1Name = teamNames[0];
+              team2Name = teamNames[1];
+            }
           }
 
-          if (teamNames.length >= 2) {
-            team1Name = teamNames[0];
-            team2Name = teamNames[1];
+          // If still not found, try to parse from the card structure
+          if (!team1Name || !team2Name) {
+            const teams = card.querySelectorAll('.team, .team-name, .cb-team-name, [class*="team"]');
+            const teamTexts = [];
+            teams.forEach(el => {
+              const text = cleanText(getText(el));
+              if (text && text.length > 1 && text.length < 30) {
+                teamTexts.push(text);
+              }
+            });
+            if (teamTexts.length >= 2) {
+              team1Name = teamTexts[0];
+              team2Name = teamTexts[1];
+            }
           }
-        }
 
-        const flags = [];
-        const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
-        flagImages.forEach(img => {
-          const src = img.getAttribute('src') || '';
-          if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
-            flags.push(src);
+          let series = '';
+          const seriesMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)\s+(\d{4})/i);
+          if (seriesMatch) {
+            series = `${cleanText(seriesMatch[1])} vs ${cleanText(seriesMatch[2])} ${seriesMatch[3]}`;
+          }
+
+          // If no series found, try series selectors
+          if (!series) {
+            const seriesEl = card.querySelector('.series-name, .snameTag, .match-series, .series-title, .tournament');
+            if (seriesEl) {
+              series = cleanText(getText(seriesEl));
+            }
+          }
+
+          // Try to extract flags
+          let flag1 = '';
+          let flag2 = '';
+          const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
+          if (flagImages.length >= 2) {
+            flag1 = flagImages[0].getAttribute('src') || '';
+            flag2 = flagImages[1].getAttribute('src') || '';
+          }
+
+          if (team1Name && team2Name) {
+            matches.push({
+              url: matchUrl,
+              team1: { 
+                name: team1Name,
+                flag: flag1
+              },
+              team2: { 
+                name: team2Name,
+                flag: flag2
+              },
+              series: series
+            });
           }
         });
 
-        let series = '';
-        const seriesMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)\s+(\d{4})/i);
-        if (seriesMatch) {
-          series = `${cleanText(seriesMatch[1])} vs ${cleanText(seriesMatch[2])} ${seriesMatch[3]}`;
-        }
-
-        if (team1Name && team2Name) {
-          matches.push({
-            url: matchUrl,
-            team1: {
-              name: team1Name,
-              flag: flags[0] || ''
-            },
-            team2: {
-              name: team2Name,
-              flag: flags[1] || ''
-            },
-            series: series
-          });
-        }
+        return matches;
       });
 
-      return { matches, skipped };
-    });
-
-    if (result.skipped.completed.length > 0) {
-      this.stats.skippedCompleted = result.skipped.completed.length;
-      logger.info(`  ⏭️ Skipped ${result.skipped.completed.length} completed matches`);
-      result.skipped.completed.slice(0, 3).forEach((item, index) => {
-        logger.info(`    ${index + 1}. [Completed] ${item.text.substring(0, 50)}...`);
-      });
-      if (result.skipped.completed.length > 3) {
-        logger.info(`    ... and ${result.skipped.completed.length - 3} more`);
+      await page.close();
+      
+      logger.info(`✅ Discovered ${result.length} upcoming matches`);
+      
+      if (result.length > 0) {
+        result.forEach((match, index) => {
+          logger.info(`  ${index + 1}. ${match.team1.name} vs ${match.team2.name} - ${match.url}`);
+        });
       }
-    }
 
-    if (result.skipped.live.length > 0) {
-      this.stats.skippedLive = result.skipped.live.length;
-      logger.info(`  ⏭️ Skipped ${result.skipped.live.length} live matches`);
-      result.skipped.live.slice(0, 3).forEach((item, index) => {
-        logger.info(`    ${index + 1}. [Live] ${item.text.substring(0, 50)}...`);
-      });
-      if (result.skipped.live.length > 3) {
-        logger.info(`    ... and ${result.skipped.live.length - 3} more`);
-      }
-    }
+      return result;
 
-    if (result.skipped.other.length > 0) {
-      this.stats.skippedOther = result.skipped.other.length;
-      logger.info(`  ⏭️ Skipped ${result.skipped.other.length} other non-upcoming matches`);
+    } catch (error) {
+      logger.error('Failed to discover matches:', error);
+      await page.close();
+      return [];
     }
-
-    logger.info(`✅ Discovered ${result.matches.length} upcoming matches`);
-    
-    if (result.matches.length > 0) {
-      result.matches.forEach((match, index) => {
-        logger.info(`  ${index + 1}. ${match.team1.name} vs ${match.team2.name} - ${match.url}`);
-      });
-    }
-
-    deepLog(`PHASE 1 - Discovered ${result.matches.length} upcoming matches`, result.matches);
-    return result.matches;
   }
 
   // ============================================================
-  // PHASE 2: EXTRACT DETAILS FROM MATCH PAGES
+  // STEP 3: REMOVE DUPLICATES
   // ============================================================
-  async extractMatchDetails(discoveredMatches) {
-    logger.info('🔍 Phase 2: Extracting details from match pages...');
+
+  removeDuplicates(matches) {
+    const seen = new Set();
+    const unique = [];
     
-    const fullMatches = [];
-
-    for (let i = 0; i < discoveredMatches.length; i++) {
-      const discovered = discoveredMatches[i];
-      logger.info(`  📄 Processing match ${i + 1}/${discoveredMatches.length}: ${discovered.url}`);
-
-      try {
-        await this.page.goto(discovered.url, {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000
-        });
-
-        await this.page.waitForTimeout(3000);
-
-        const detailData = await this.extractDetailedMatchData();
-        const playersData = await this.extractPlayersFromTabs();
-        
-        let weather = null;
-        if (detailData.venue || detailData.series || detailData.matchTitle || 
-            detailData.team1.name || detailData.team2.name) {
-          logger.info(`    🌤️ Requesting weather for match:`);
-          logger.info(`       Venue: "${detailData.venue || 'TBD'}"`);
-          logger.info(`       Series: "${detailData.series || 'N/A'}"`);
-          logger.info(`       Teams: ${detailData.team1.name || 'N/A'} vs ${detailData.team2.name || 'N/A'}`);
-          
-          weather = await this.getWeather(
-            detailData.venue,
-            detailData.series,
-            detailData.matchTitle,
-            detailData.team1.name,
-            detailData.team2.name
-          );
-          
-          if (weather) {
-            logger.info(`    ✅ Weather obtained for this match`);
-          } else {
-            logger.warn(`    ❌ No weather available for this match`);
-          }
-        } else {
-          logger.debug(`    ⏭️ No location information available, skipping weather`);
-        }
-        
-        const formattedMatch = await this.formatMatchData(discovered, detailData, playersData, weather);
-        fullMatches.push(formattedMatch);
-        
-        const teamNames = Object.keys(playersData);
-        logger.info(`    ✅ Extracted: ${formattedMatch.teams.home.name} vs ${formattedMatch.teams.away.name}`);
-        logger.info(`       Venue: ${formattedMatch.venue.name || 'N/A'}`);
-        logger.info(`       Start Time: ${formattedMatch.match.start_time || 'N/A'}`);
-        logger.info(`       Weather: ${weather ? `${weather.temperature}°C, ${weather.condition}` : 'Not Available'}`);
-        logger.info(`       Players: ${teamNames.map(t => `${t} (${playersData[t]?.length || 0})`).join(', ')}`);
-
-        deepLog(`PHASE 2 - Match ${i + 1} Formatted Data`, formattedMatch);
-
-        if (i < discoveredMatches.length - 1) {
-          await this.page.waitForTimeout(1000);
-        }
-
-      } catch (error) {
-        logger.error(`    ❌ Error processing match ${i + 1}: ${error.message}`);
-        this.stats.errors++;
+    for (const match of matches) {
+      if (!seen.has(match.url)) {
+        seen.add(match.url);
+        unique.push(match);
       }
     }
+    
+    return unique;
+  }
 
-    deepLog(`PHASE 2 - ${fullMatches.length} upcoming matches collected`, fullMatches);
-    return fullMatches;
+  // ============================================================
+  // STEPS 4-7: PROCESS WITH WORKER POOL
+  // ============================================================
+
+  async processWithWorkerPool() {
+    logger.info(`👷 Starting ${this.maxWorkers} workers...`);
+    
+    const workerPromises = [];
+    const startTime = Date.now();
+    
+    // Create workers
+    for (let i = 1; i <= this.maxWorkers; i++) {
+      workerPromises.push(this.createWorker(i));
+    }
+    
+    // Wait for all workers to complete
+    await Promise.all(workerPromises);
+    
+    const duration = Date.now() - startTime;
+    logger.info(`✅ All workers completed in ${duration}ms`);
+    logger.info(`📊 Processed: ${this.stats.processed}, Succeeded: ${this.stats.succeeded}, Failed: ${this.stats.failed}`);
+    
+    // Check if we have failed matches to retry
+    if (this.failedUrls.size > 0 && this.retryQueue.length === 0) {
+      logger.info(`🔄 Retrying ${this.failedUrls.size} failed matches...`);
+      this.retryQueue = Array.from(this.failedUrls);
+      this.failedUrls.clear();
+      
+      // Create retry workers
+      const retryPromises = [];
+      const retryWorkers = Math.min(2, this.retryQueue.length);
+      
+      for (let i = 1; i <= retryWorkers; i++) {
+        retryPromises.push(this.createRetryWorker(i));
+      }
+      
+      await Promise.all(retryPromises);
+    }
+    
+    return this.results;
+  }
+
+  // ============================================================
+  // CREATE WORKER
+  // ============================================================
+
+  async createWorker(workerId) {
+    const workerName = `Worker ${workerId}`;
+    logger.info(`👷 ${workerName} started`);
+    
+    this.stats.workerStats[workerId] = {
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      startTime: Date.now()
+    };
+    
+    // Each worker gets its own page from the shared context
+    const page = await this.context.newPage();
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
+    
+    let processedCount = 0;
+    
+    while (this.processingQueue.length > 0) {
+      // Get next match from queue
+      const match = this.processingQueue.shift();
+      
+      if (!match) break;
+      if (this.processedUrls.has(match.url)) continue;
+      
+      this.processedUrls.add(match.url);
+      processedCount++;
+      this.stats.processed++;
+      
+      const queueRemaining = this.processingQueue.length;
+      logger.info(`👷 ${workerName} processing Match ${processedCount} (Queue Remaining: ${queueRemaining})`);
+      
+      try {
+        // Process the match
+        const result = await this.processMatch(page, match, workerId);
+        
+        if (result) {
+          this.results.push(result);
+          this.stats.succeeded++;
+          this.stats.workerStats[workerId].succeeded++;
+          logger.info(`✅ ${workerName} completed Match ${processedCount} (Queue Remaining: ${queueRemaining})`);
+        } else {
+          this.failedUrls.add(match.url);
+          this.stats.failed++;
+          this.stats.workerStats[workerId].failed++;
+          logger.warn(`❌ ${workerName} failed Match ${processedCount} (Queue Remaining: ${queueRemaining})`);
+        }
+        
+        this.stats.workerStats[workerId].processed++;
+        
+      } catch (error) {
+        this.failedUrls.add(match.url);
+        this.stats.failed++;
+        this.stats.workerStats[workerId].failed++;
+        logger.error(`❌ ${workerName} error on Match ${processedCount}: ${error.message}`);
+      }
+    }
+    
+    await page.close();
+    
+    const duration = (Date.now() - this.stats.workerStats[workerId].startTime) / 1000;
+    logger.info(`🏁 ${workerName} finished - Processed: ${processedCount}, Succeeded: ${this.stats.workerStats[workerId].succeeded}, Failed: ${this.stats.workerStats[workerId].failed}, Duration: ${duration}s`);
+    
+    return { workerId, processed: processedCount };
+  }
+
+  // ============================================================
+  // CREATE RETRY WORKER
+  // ============================================================
+
+  async createRetryWorker(workerId) {
+    const workerName = `Retry Worker ${workerId}`;
+    logger.info(`🔄 ${workerName} started`);
+    
+    const page = await this.context.newPage();
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
+    
+    let processedCount = 0;
+    
+    while (this.retryQueue.length > 0) {
+      const url = this.retryQueue.shift();
+      
+      if (!url) break;
+      
+      processedCount++;
+      logger.info(`🔄 ${workerName} retrying ${url}`);
+      
+      try {
+        // Find the match data
+        const match = { url };
+        const result = await this.processMatch(page, match, `R${workerId}`);
+        
+        if (result) {
+          this.results.push(result);
+          this.stats.succeeded++;
+          this.stats.retried++;
+          logger.info(`✅ ${workerName} successfully retried match`);
+        } else {
+          this.stats.failed++;
+          this.failedMatches.push({ url, reason: 'Retry failed' });
+          logger.warn(`❌ ${workerName} retry failed`);
+        }
+        
+      } catch (error) {
+        this.stats.failed++;
+        this.failedMatches.push({ url, reason: error.message });
+        logger.error(`❌ ${workerName} retry error: ${error.message}`);
+      }
+    }
+    
+    await page.close();
+    logger.info(`🏁 ${workerName} finished - Retried: ${processedCount}`);
+  }
+
+  // ============================================================
+  // PROCESS SINGLE MATCH
+  // ============================================================
+
+  async processMatch(page, match, workerId) {
+    try {
+      // Navigate to match page
+      await page.goto(match.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 20000
+      });
+
+      // Wait for content to load
+      await page.waitForTimeout(2000);
+
+      // Extract detailed match data
+      const detailData = await this.extractDetailedMatchData(page);
+      
+      // Extract players
+      const playersData = await this.extractPlayersFromTabs(page);
+      
+      // Get weather
+      let weather = null;
+      if (detailData.venue || detailData.series || detailData.matchTitle || 
+          detailData.team1.name || detailData.team2.name) {
+        weather = await this.getWeather(
+          detailData.venue,
+          detailData.series,
+          detailData.matchTitle,
+          detailData.team1.name,
+          detailData.team2.name
+        );
+      }
+      
+      // Format the match data
+      const formattedMatch = await this.formatMatchData(match, detailData, playersData, weather);
+      
+      return formattedMatch;
+      
+    } catch (error) {
+      logger.debug(`Worker ${workerId} error processing ${match.url}: ${error.message}`);
+      return null;
+    }
   }
 
   // ============================================================
   // EXTRACT DETAILED MATCH DATA
   // ============================================================
-  async extractDetailedMatchData() {
-    return await this.page.evaluate(() => {
+
+  async extractDetailedMatchData(page) {
+    return await page.evaluate(() => {
       const getText = (el) => {
         if (!el) return '';
         return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
@@ -977,7 +974,8 @@ class UpcomingScraper extends BaseCrexScraper {
         team2: { name: '', flag: '', score: '' }
       };
 
-      const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series', '.match-tournament'];
+      // Extract series
+      const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series'];
       for (const selector of seriesSelectors) {
         const el = document.querySelector(selector);
         if (el) {
@@ -986,7 +984,8 @@ class UpcomingScraper extends BaseCrexScraper {
         }
       }
 
-      const titleSelectors = ['h1', '.match-title', '.match-header h1', '.title', '.match-heading'];
+      // Extract match title
+      const titleSelectors = ['h1', '.match-title', '.match-header h1', '.title'];
       for (const selector of titleSelectors) {
         const el = document.querySelector(selector);
         if (el) {
@@ -995,45 +994,20 @@ class UpcomingScraper extends BaseCrexScraper {
         }
       }
 
-      const venueSelectors = [
-        '.venue', '.match-venue', '.venue-name', '.location', '.stadium',
-        '.match-location', '.matchInfo', '.match-details', '.info-row',
-        '.venue-info', '.meta-info', '.scorecard-header',
-        '[data-testid*="venue"]', '[class*="venue"]', '[class*="location"]'
-      ];
-      
+      // Extract venue
+      const venueSelectors = ['.venue', '.match-venue', '.venue-name', '.location', '.stadium'];
       for (const selector of venueSelectors) {
-        const elements = document.querySelectorAll(selector);
-        for (const el of elements) {
+        const el = document.querySelector(selector);
+        if (el) {
           const text = cleanText(getText(el));
-          if (text && text.length > 3 && 
-              !text.includes('Over') && 
-              !text.includes('wd') &&
-              !text.match(/^\d/)) {
+          if (text && text.length > 3) {
             data.venue = text;
             break;
           }
         }
-        if (data.venue) break;
       }
 
-      if (!data.venue) {
-        const venuePatterns = [
-          /Venue:\s*([^,\n]+(?:,[^,\n]+)?)/i,
-          /at\s+([A-Za-z\s,]+(?:Stadium|Ground|Park|Gardens|Oval))/i,
-          /Stadium:\s*([^,\n]+)/i,
-          /Ground:\s*([^,\n]+)/i
-        ];
-        for (const pattern of venuePatterns) {
-          const match = allText.match(pattern);
-          if (match && match[1]) {
-            data.venue = cleanText(match[1]);
-            break;
-          }
-        }
-      }
-
-      // Extract raw match date - exactly as displayed on CREX
+      // Extract date/time
       const dateElement = document.querySelector('.match-date > div');
       if (dateElement) {
         const dateText = dateElement.textContent.trim();
@@ -1047,113 +1021,23 @@ class UpcomingScraper extends BaseCrexScraper {
         }
       }
 
-      // Fallback date selectors
-      if (!data.rawMatchDate) {
-        const dateSelectors = [
-          '.match-date',
-          '.date',
-          '.schedule-date',
-          '.day',
-          '.fixture-date',
-          '.start-date'
-        ];
-        for (const selector of dateSelectors) {
-          const el = document.querySelector(selector);
-          if (el) {
-            const text = cleanText(getText(el));
-            if (text && text.length > 3) {
-              data.rawMatchDate = text;
-              data.date = text;
-              const timeMatch = text.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)|\d{1,2}\s*(?:AM|PM))/i);
-              if (timeMatch) {
-                data.startTime = timeMatch[0];
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      // Fallback: Find "Today" or "Tomorrow" pattern
-      if (!data.rawMatchDate) {
-        const todayMatch = allText.match(/(Today|Tomorrow|\w+day),\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-        if (todayMatch) {
-          data.rawMatchDate = todayMatch[0];
-          data.date = todayMatch[0];
-          const timeMatch = todayMatch[0].match(/(\d{1,2}:\d{2}\s*(?:AM|PM)|\d{1,2}\s*(?:AM|PM))/i);
-          if (timeMatch) {
-            data.startTime = timeMatch[0];
-          }
-        }
-      }
-
-      const countdownSpans = document.querySelectorAll('.live-score-card span, .countdown-timer span, .match-timer span, .starts-in, .countdown');
-      for (const span of countdownSpans) {
-        const text = cleanText(getText(span));
-        if (text && (text.match(/\d+[mh]\s*[:]?\s*\d+[s]?/) || text.match(/\d+[mh]/))) {
-          data.countdownText = text;
-          break;
-        }
-      }
-
-      if (!data.countdownText) {
-        const timePatterns = [
-          /(\d+[mh]\s*[:]?\s*\d+[s]?)/i,
-          /(\d+[mh])/i,
-          /(\d+:\d{2})/
-        ];
-        for (const pattern of timePatterns) {
-          const match = allText.match(pattern);
-          if (match) {
-            data.countdownText = cleanText(match[0]);
-            break;
-          }
-        }
-      }
-
-      const teamContainers = document.querySelectorAll('.team-container, .team-info, .match-teams .team, .team-profile');
-      
+      // Extract teams
+      const teamContainers = document.querySelectorAll('.team-container, .team-info, .match-teams .team');
       if (teamContainers.length >= 2) {
         const team1El = teamContainers[0];
         const team2El = teamContainers[1];
         
-        const name1El = team1El.querySelector('.team-name, .name, .team-title, .team-label');
+        const name1El = team1El.querySelector('.team-name, .name, .team-title');
         if (name1El) data.team1.name = cleanText(getText(name1El));
         
         const flag1El = team1El.querySelector('img');
         if (flag1El) data.team1.flag = flag1El.getAttribute('src') || '';
         
-        const score1El = team1El.querySelector('.score, .team-score, .runs');
-        if (score1El) data.team1.score = cleanText(getText(score1El));
-
-        const name2El = team2El.querySelector('.team-name, .name, .team-title, .team-label');
+        const name2El = team2El.querySelector('.team-name, .name, .team-title');
         if (name2El) data.team2.name = cleanText(getText(name2El));
         
         const flag2El = team2El.querySelector('img');
         if (flag2El) data.team2.flag = flag2El.getAttribute('src') || '';
-        
-        const score2El = team2El.querySelector('.score, .team-score, .runs');
-        if (score2El) data.team2.score = cleanText(getText(score2El));
-      }
-
-      const resultSelectors = ['.result', '.match-result', '.cb-result', '.status-text'];
-      for (const selector of resultSelectors) {
-        const el = document.querySelector(selector);
-        if (el) {
-          const resultText = cleanText(getText(el));
-          data.result = resultText;
-          
-          const winMatch = resultText.match(/([A-Za-z\s]+)\s+won/i);
-          if (winMatch) {
-            data.winningTeam = cleanText(winMatch[1]);
-          }
-          
-          const marginMatch = resultText.match(/won by\s+([\d\s]+(?:runs|wickets))/i);
-          if (marginMatch) {
-            data.margin = cleanText(marginMatch[1]);
-          }
-          break;
-        }
       }
 
       return data;
@@ -1161,426 +1045,164 @@ class UpcomingScraper extends BaseCrexScraper {
   }
 
   // ============================================================
-  // EXTRACT PLAYERS FROM TEAM TABS
+  // EXTRACT PLAYERS FROM TABS
   // ============================================================
-  async extractPlayersFromTabs() {
-    logger.info('    🏏 Extracting players from team tabs...');
-    
+
+  async extractPlayersFromTabs(page) {
     const playersData = {};
-    let teamTabsFound = false;
 
     try {
-      // Wait for the squad tabs to be fully rendered
-      await this.page.waitForSelector('.playingxi-button, .tab-item, .team-tab, .playingxi-tab, [role="tab"]', {
-        timeout: 10000
-      }).catch(() => {
-        logger.warn('    ⚠️ Squad tabs not found after waiting');
-      });
-      
-      // Additional wait for React to render
-      await this.page.waitForTimeout(1000);
-      
-      // Find all team tabs
-      const tabs = await this.page.$$('.playingxi-button, .tab-item, .team-tab, .playingxi-tab, [role="tab"]');
+      // Wait for tabs
+      await page.waitForSelector('.playingxi-button, .tab-item, .team-tab, [role="tab"]', {
+        timeout: 5000
+      }).catch(() => {});
+
+      const tabs = await page.$$('.playingxi-button, .tab-item, .team-tab, [role="tab"]');
       
       if (tabs.length < 2) {
-        logger.warn('    ⚠️ Less than 2 team tabs found, trying alternative selectors');
-        const altTabs = await this.page.$$('.team-selector, .team-button, .team-tab-btn');
-        if (altTabs.length >= 2) {
-          teamTabsFound = true;
-          await this.processTabs(altTabs, playersData);
-        }
-      } else {
-        teamTabsFound = true;
-        await this.processTabs(tabs, playersData);
+        return playersData;
       }
 
-      if (!teamTabsFound) {
-        logger.warn('    ⚠️ No team tabs found, trying to extract from visible content');
-        const visiblePlayers = await this.extractVisiblePlayers();
-        if (Object.keys(visiblePlayers).length > 0) {
-          Object.assign(playersData, visiblePlayers);
+      const tabCount = Math.min(tabs.length, 2);
+      
+      for (let i = 0; i < tabCount; i++) {
+        try {
+          const teamShortName = await page.evaluate((tab) => {
+            return tab.textContent ? tab.textContent.replace(/\s+/g, ' ').trim() : '';
+          }, tabs[i]);
+
+          if (!teamShortName) continue;
+
+          await tabs[i].click();
+          await page.waitForTimeout(500);
+
+          const players = await page.evaluate((teamShortName) => {
+            const getText = (el) => {
+              if (!el) return '';
+              return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+            };
+
+            const cleanText = (text) => {
+              if (!text) return '';
+              return text.replace(/\s+/g, ' ').trim();
+            };
+
+            const cleanPlayerName = (name) => {
+              if (!name) return '';
+              let cleaned = name.replace(/\s+/g, ' ').trim();
+              cleaned = cleaned.replace(/✈️/g, ' ✈️').replace(/\s+/g, ' ').trim();
+              cleaned = cleaned.replace(/\(C\)/g, ' (C) ').replace(/\s+/g, ' ').trim();
+              cleaned = cleaned.replace(/\(WK\)/g, ' (WK) ').replace(/\s+/g, ' ').trim();
+              cleaned = cleaned.replace(/\s+/g, ' ').trim();
+              cleaned = cleaned.replace(/\)\s*\(/g, ') (').replace(/\s+/g, ' ').trim();
+              return cleaned;
+            };
+
+            const isPlaceholderImage = (src) => {
+              if (!src) return true;
+              const patterns = ['playerPlaceholder.svg', 'placeholder', 'default-player'];
+              for (const pattern of patterns) {
+                if (src.includes(pattern)) return true;
+              }
+              return false;
+            };
+
+            const getFullUrl = (path) => {
+              if (!path) return '';
+              if (path.startsWith('https://')) return path;
+              if (path.startsWith('/')) return `https://crex.com${path}`;
+              return `https://crex.com/${path}`;
+            };
+
+            const players = [];
+            const playerCards = document.querySelectorAll('.playingxi-card .player-card, .player-card');
+            
+            for (const card of playerCards) {
+              const nameEl = card.querySelector('.p-name, .player-name, .name');
+              const rawName = nameEl ? cleanText(getText(nameEl)) : '';
+              
+              if (!rawName) continue;
+
+              const cleanedName = cleanPlayerName(rawName);
+              
+              let role = 'Player';
+              const roleEl = card.querySelector('.bat-ball-type, .bat-ball-typ, .role');
+              if (roleEl) {
+                const roleText = cleanText(getText(roleEl));
+                if (roleText) {
+                  const validRoles = ['Batter', 'Bowler', 'All Rounder', 'Wicket Keeper'];
+                  for (const validRole of validRoles) {
+                    if (roleText.includes(validRole) || validRole.includes(roleText)) {
+                      role = validRole;
+                      break;
+                    }
+                  }
+                  if (role === 'Player') role = roleText;
+                }
+              }
+
+              const player = { name: cleanedName, role: role };
+
+              let image = '';
+              const imgEl = card.querySelector('.img-card img, img');
+              if (imgEl) {
+                const dataSrc = imgEl.getAttribute('data-src');
+                const src = imgEl.getAttribute('src');
+                const imgSrc = dataSrc || src;
+                if (imgSrc && !isPlaceholderImage(imgSrc)) {
+                  image = imgSrc;
+                }
+              }
+              if (image) player.image = image;
+
+              let profileUrl = '';
+              const profileEl = card.querySelector('a[href*="/player/"]');
+              if (profileEl) {
+                const href = profileEl.getAttribute('href');
+                if (href) profileUrl = getFullUrl(href);
+              }
+              if (profileUrl) player.profile_url = profileUrl;
+
+              players.push(player);
+            }
+
+            return players;
+          }, teamShortName);
+
+          if (players.length > 0) {
+            playersData[teamShortName] = players;
+          }
+
+        } catch (error) {
+          logger.warn(`Failed to process tab ${i + 1}: ${error.message}`);
         }
       }
 
     } catch (error) {
-      logger.error(`    ❌ Error extracting players: ${error.message}`);
+      logger.warn(`Error extracting players: ${error.message}`);
     }
 
     return playersData;
   }
 
   // ============================================================
-  // PROCESS TEAM TABS
+  // FORMAT MATCH DATA
   // ============================================================
-  async processTabs(tabs, playersData) {
-    const tabCount = Math.min(tabs.length, 2);
-    
-    for (let i = 0; i < tabCount; i++) {
-      try {
-        // Get the team name from the tab label (visible text - this is the short name)
-        const teamShortName = await this.page.evaluate((tab) => {
-          return tab.textContent ? tab.textContent.replace(/\s+/g, ' ').trim() : '';
-        }, tabs[i]);
 
-        if (!teamShortName) {
-          logger.warn(`    ⚠️ Could not extract team short name for tab ${i + 1}`);
-          continue;
-        }
-
-        logger.info(`    📋 Processing tab: ${teamShortName}`);
-
-        // Click the tab and wait for content to render
-        await tabs[i].click();
-        await this.page.waitForTimeout(1000); // Wait for React to re-render
-        
-        // Wait for player cards to appear
-        try {
-          await this.page.waitForSelector('.playingxi-card .player-card, .playingxi-card-row .player-card, .player-card', {
-            timeout: 5000
-          });
-        } catch (e) {
-          logger.warn(`    ⚠️ No player cards found for ${teamShortName} after clicking`);
-        }
-
-        const players = await this.extractPlayersFromActiveTab(teamShortName);
-        
-        if (players.length > 0) {
-          playersData[teamShortName] = players;
-          logger.info(`    ✅ Extracted ${players.length} players for ${teamShortName}`);
-          players.slice(0, 3).forEach((p, idx) => {
-            const hasImage = p.image ? ' [has image]' : '';
-            const hasProfile = p.profile_url ? ' [has profile]' : '';
-            logger.info(`       ${idx + 1}. ${p.name} (${p.role})${hasImage}${hasProfile}`);
-          });
-          if (players.length > 3) {
-            logger.info(`       ... and ${players.length - 3} more`);
-          }
-        } else {
-          logger.warn(`    ⚠️ No players found for ${teamShortName}`);
-        }
-
-      } catch (error) {
-        logger.error(`    ❌ Error processing tab ${i + 1}: ${error.message}`);
-      }
-    }
-  }
-
-  // ============================================================
-  // EXTRACT PLAYERS FROM ACTIVE TAB
-  // ============================================================
-  async extractPlayersFromActiveTab(teamShortName) {
-    return await this.page.evaluate((teamShortName) => {
-      const getText = (el) => {
-        if (!el) return '';
-        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
-      };
-
-      const cleanText = (text) => {
-        if (!text) return '';
-        return text.replace(/\s+/g, ' ').trim();
-      };
-
-      const cleanPlayerName = (name) => {
-        if (!name) return '';
-        
-        // Normalize spaces
-        let cleaned = name.replace(/\s+/g, ' ').trim();
-        
-        // Add space before ✈️ if missing
-        cleaned = cleaned.replace(/✈️/g, ' ✈️').replace(/\s+/g, ' ').trim();
-        
-        // Ensure spaces around (C) and (WK)
-        cleaned = cleaned.replace(/\(C\)/g, ' (C) ').replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/\(WK\)/g, ' (WK) ').replace(/\s+/g, ' ').trim();
-        
-        // Remove duplicate spaces
-        cleaned = cleaned.replace(/\s+/g, ' ').trim();
-        
-        // Ensure proper spacing for multiple markers
-        cleaned = cleaned.replace(/\)\s*\(/g, ') (').replace(/\s+/g, ' ').trim();
-        
-        return cleaned;
-      };
-
-      const isPlaceholderImage = (src) => {
-        if (!src) return true;
-        const patterns = [
-          'playerPlaceholder.svg',
-          'placeholder',
-          'default-player',
-          'default-avatar',
-          'assets/img/playerPlaceholder'
-        ];
-        for (const pattern of patterns) {
-          if (src.includes(pattern)) return true;
-        }
-        return false;
-      };
-
-      const getFullUrl = (path) => {
-        if (!path) return '';
-        if (path.startsWith('https://')) return path;
-        if (path.startsWith('/')) return `https://crex.com${path}`;
-        return `https://crex.com/${path}`;
-      };
-
-      const players = [];
-
-      // Find player cards in the current tab
-      const playerCards = document.querySelectorAll('.playingxi-card .player-card, .playingxi-card-row .player-card, .player-card');
-      
-      if (playerCards.length === 0) {
-        const altCards = document.querySelectorAll('.player-card, .player-item, .player-info');
-        for (const card of altCards) {
-          const player = extractPlayerFromCard(card);
-          if (player) {
-            players.push(player);
-          }
-        }
-        return players;
-      }
-
-      for (const card of playerCards) {
-        const player = extractPlayerFromCard(card);
-        if (player) {
-          players.push(player);
-        }
-      }
-
-      // Debug: Log raw player names for this team
-      console.log(`   📝 Raw player names for ${teamShortName}:`, players.map(p => p.rawName || p.name));
-
-      return players;
-
-      function extractPlayerFromCard(card) {
-        const nameEl = card.querySelector('.p-name, .player-name, .name');
-        const rawName = nameEl ? cleanText(getText(nameEl)) : '';
-        
-        if (!rawName) return null;
-
-        // Clean the name while preserving (C), (WK), ✈️
-        const cleanedName = cleanPlayerName(rawName);
-        
-        // Extract role
-        let role = 'Player';
-        const roleEl = card.querySelector('.bat-ball-type, .bat-ball-typ, .role, .player-role');
-        if (roleEl) {
-          const roleText = cleanText(getText(roleEl));
-          if (roleText) {
-            // Only use valid role values
-            const validRoles = ['Batter', 'Bowler', 'All Rounder', 'Wicket Keeper'];
-            for (const validRole of validRoles) {
-              if (roleText.includes(validRole) || validRole.includes(roleText)) {
-                role = validRole;
-                break;
-              }
-            }
-            if (role === 'Player') {
-              // If no match, use the extracted text
-              role = roleText;
-            }
-          }
-        }
-
-        const player = {
-          name: cleanedName,
-          role: role,
-          rawName: rawName // For debugging
-        };
-
-        // Extract image
-        let image = '';
-        const imgSelectors = [
-          '.img-card app-player-profile-img img',
-          '.img-card img',
-          'picture img',
-          'img[data-src]',
-          'img[src]',
-          'img[srcset]'
-        ];
-        
-        for (const selector of imgSelectors) {
-          const imgEl = card.querySelector(selector);
-          if (imgEl) {
-            const dataSrc = imgEl.getAttribute('data-src');
-            const src = imgEl.getAttribute('src');
-            const srcset = imgEl.getAttribute('srcset');
-            
-            let imgSrc = dataSrc || src || srcset;
-            
-            if (srcset && !dataSrc && !src) {
-              const firstSrc = srcset.split(',')[0]?.trim()?.split(' ')[0];
-              if (firstSrc) imgSrc = firstSrc;
-            }
-            
-            if (imgSrc && !isPlaceholderImage(imgSrc)) {
-              image = imgSrc;
-              break;
-            }
-          }
-        }
-
-        if (image) {
-          player.image = image;
-        }
-
-        let profileUrl = '';
-        const profileEl = card.querySelector('a[href*="/player/"]');
-        if (profileEl) {
-          const href = profileEl.getAttribute('href');
-          if (href) {
-            profileUrl = getFullUrl(href);
-          }
-        }
-
-        if (profileUrl) {
-          player.profile_url = profileUrl;
-        }
-
-        return player;
-      }
-    }, teamShortName);
-  }
-
-  // ============================================================
-  // EXTRACT VISIBLE PLAYERS (Fallback)
-  // ============================================================
-  async extractVisiblePlayers() {
-    return await this.page.evaluate(() => {
-      const getText = (el) => {
-        if (!el) return '';
-        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
-      };
-
-      const cleanText = (text) => {
-        if (!text) return '';
-        return text.replace(/\s+/g, ' ').trim();
-      };
-
-      const cleanPlayerName = (name) => {
-        if (!name) return '';
-        let cleaned = name.replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/✈️/g, ' ✈️').replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/\(C\)/g, ' (C) ').replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/\(WK\)/g, ' (WK) ').replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/\s+/g, ' ').trim();
-        cleaned = cleaned.replace(/\)\s*\(/g, ') (').replace(/\s+/g, ' ').trim();
-        return cleaned;
-      };
-
-      const isPlaceholderImage = (src) => {
-        if (!src) return true;
-        const patterns = [
-          'playerPlaceholder.svg',
-          'placeholder',
-          'default-player',
-          'default-avatar',
-          'assets/img/playerPlaceholder'
-        ];
-        for (const pattern of patterns) {
-          if (src.includes(pattern)) return true;
-        }
-        return false;
-      };
-
-      const getFullUrl = (path) => {
-        if (!path) return '';
-        if (path.startsWith('https://')) return path;
-        if (path.startsWith('/')) return `https://crex.com${path}`;
-        return `https://crex.com/${path}`;
-      };
-
-      const players = [];
-      const playerCards = document.querySelectorAll('.player-card, .player-item, .playingxi-card-row .player-card');
-      
-      playerCards.forEach(card => {
-        const nameEl = card.querySelector('.p-name, .player-name, .name');
-        const fullName = nameEl ? cleanText(getText(nameEl)) : '';
-        
-        if (!fullName) return;
-
-        const cleanedName = cleanPlayerName(fullName);
-        
-        let role = 'Player';
-        const roleEl = card.querySelector('.bat-ball-type, .bat-ball-typ, .role, .player-role');
-        if (roleEl) {
-          const roleText = cleanText(getText(roleEl));
-          if (roleText) {
-            const validRoles = ['Batter', 'Bowler', 'All Rounder', 'Wicket Keeper'];
-            for (const validRole of validRoles) {
-              if (roleText.includes(validRole) || validRole.includes(roleText)) {
-                role = validRole;
-                break;
-              }
-            }
-            if (role === 'Player') {
-              role = roleText;
-            }
-          }
-        }
-
-        const player = {
-          name: cleanedName,
-          role: role
-        };
-
-        let image = '';
-        const imgEl = card.querySelector('.img-card img, .player-image img, img');
-        if (imgEl) {
-          const dataSrc = imgEl.getAttribute('data-src');
-          const src = imgEl.getAttribute('src');
-          const imgSrc = dataSrc || src;
-          if (imgSrc && !isPlaceholderImage(imgSrc)) {
-            image = imgSrc;
-          }
-        }
-
-        if (image) {
-          player.image = image;
-        }
-
-        let profileUrl = '';
-        const profileEl = card.querySelector('a[href*="/player/"]');
-        if (profileEl) {
-          const href = profileEl.getAttribute('href');
-          if (href) {
-            profileUrl = getFullUrl(href);
-          }
-        }
-
-        if (profileUrl) {
-          player.profile_url = profileUrl;
-        }
-
-        players.push(player);
-      });
-
-      return { 'Players': players };
-    });
-  }
-
-  // ============================================================
-  // FORMAT MATCH DATA - TOSS REMOVED
-  // ============================================================
   async formatMatchData(discovered, detailData, playersData, weatherData) {
     const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const seriesId = `series_${Date.now()}`;
     const venueId = `venue_${Date.now()}`;
     
-    // Generate team IDs dynamically
     const team1Id = this.generateTeamId(detailData.team1.name || discovered.team1.name);
     const team2Id = this.generateTeamId(detailData.team2.name || discovered.team2.name);
     
-    // Determine format
     let format = 'T20';
     const titleText = detailData.matchTitle || `${detailData.team1.name} vs ${detailData.team2.name}`;
     if (titleText.includes('ODI')) format = 'ODI';
     else if (titleText.includes('Test')) format = 'Test';
     else if (titleText.includes('100B')) format = 'The Hundred';
     else if (titleText.includes('T10')) format = 'T10';
-    else if (titleText.includes('First Class')) format = 'First Class';
-    else if (titleText.includes('List A')) format = 'List A';
     
     let matchNumber = 'Match';
     const numberMatch = titleText.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|TEST|ODI|T20|T10|100B))/i);
@@ -1595,43 +1217,22 @@ class UpcomingScraper extends BaseCrexScraper {
       status = 'Live';
     }
     
-    // Keep the original start_time exactly as displayed on CREX
     const startTime = detailData.rawMatchDate || '';
 
-    // Build players data - use the short names from the tabs as keys
     const players = playersData || {};
 
-    // Debug: Log extracted data
-    logger.info(`    📊 Extraction Debug:`);
-    logger.info(`       Team Short Names: ${Object.keys(players).join(', ') || 'None'}`);
-    logger.info(`       Team IDs: ${team1Id}, ${team2Id}`);
-    logger.info(`       Series Name: ${detailData.series || discovered.series || 'Unknown'}`);
-    
-    // Clean up series short name - trim leading/trailing spaces and commas
     let seriesShortName = detailData.series || discovered.series || 'Unknown Series';
     seriesShortName = seriesShortName.replace(/^[\s,]+|[\s,]+$/g, '').trim();
-    
-    logger.info(`       Series Short Name: "${seriesShortName}"`);
-    
-    // Log player counts
-    for (const [teamShortName, playerList] of Object.entries(players)) {
-      logger.info(`       ${teamShortName} Players: ${playerList.length}`);
-      if (playerList.length > 0) {
-        const sampleNames = playerList.slice(0, 2).map(p => p.rawName || p.name);
-        logger.info(`         Sample raw names: ${sampleNames.join(', ')}`);
-        const sampleCleaned = playerList.slice(0, 2).map(p => p.name);
-        logger.info(`         Sample cleaned names: ${sampleCleaned.join(', ')}`);
-      }
-    }
 
-    // Get short names from the discovered data if available
-    const homeShortName = detailData.team1.short || discovered.team1.short || 
-                          Object.keys(players).find(k => k.includes(discovered.team1.name?.substring(0, 3))) || 
-                          discovered.team1.name?.substring(0, 3).toUpperCase() || '';
+    const homeShortName = Object.keys(players).find(k => 
+      k.includes(discovered.team1.name?.substring(0, 3)) || 
+      discovered.team1.name?.substring(0, 3).toUpperCase()
+    ) || discovered.team1.name?.substring(0, 3).toUpperCase() || '';
     
-    const awayShortName = detailData.team2.short || discovered.team2.short || 
-                          Object.keys(players).find(k => k.includes(discovered.team2.name?.substring(0, 3))) || 
-                          discovered.team2.name?.substring(0, 3).toUpperCase() || '';
+    const awayShortName = Object.keys(players).find(k => 
+      k.includes(discovered.team2.name?.substring(0, 3)) || 
+      discovered.team2.name?.substring(0, 3).toUpperCase()
+    ) || discovered.team2.name?.substring(0, 3).toUpperCase() || '';
 
     return {
       match_id: matchId,
@@ -1672,19 +1273,72 @@ class UpcomingScraper extends BaseCrexScraper {
   }
 
   // ============================================================
+  // MERGE RESULTS
+  // ============================================================
+
+  mergeResults(results) {
+    const seen = new Set();
+    const merged = [];
+    
+    for (const result of results) {
+      if (!result || !result.match_url) continue;
+      if (!seen.has(result.match_url)) {
+        seen.add(result.match_url);
+        merged.push(result);
+      }
+    }
+    
+    return merged;
+  }
+
+  // ============================================================
+  // CLOSE BROWSER
+  // ============================================================
+
+  async closeBrowser() {
+    try {
+      if (this.browser) {
+        await this.browser.close();
+        this.browser = null;
+        this.context = null;
+        logger.info('✅ Shared browser closed');
+      }
+    } catch (error) {
+      logger.error('Error closing browser:', error.message);
+    }
+  }
+
+  // ============================================================
   // LOG STATISTICS
   // ============================================================
+
   logStatistics() {
-    logger.info(`📊 Upcoming Scraper Statistics:`);
+    const duration = this.stats.startTime ? (Date.now() - this.stats.startTime) / 1000 : 0;
+    
+    logger.info('='.repeat(60));
+    logger.info('📊 UPCOMING SCRAPER STATISTICS');
+    logger.info('='.repeat(60));
     logger.info(`   Discovered: ${this.stats.discovered}`);
-    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
-    logger.info(`   Skipped Completed: ${this.stats.skippedCompleted}`);
-    logger.info(`   Skipped Live: ${this.stats.skippedLive}`);
-    logger.info(`   Skipped Other: ${this.stats.skippedOther}`);
+    logger.info(`   Duplicates Removed: ${this.stats.duplicateRemoved}`);
+    logger.info(`   Total Processed: ${this.stats.processed}`);
+    logger.info(`   ✅ Succeeded: ${this.stats.succeeded}`);
+    logger.info(`   ❌ Failed: ${this.stats.failed}`);
+    logger.info(`   🔄 Retried: ${this.stats.retried}`);
     logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
     logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
-    logger.info(`   Errors: ${this.stats.errors}`);
-    logger.info(`   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`);
+    logger.info(`   ⏱️  Duration: ${duration}s`);
+    logger.info(`   📈 Success Rate: ${this.stats.processed > 0 ? Math.round((this.stats.succeeded / this.stats.processed) * 100) : 0}%`);
+    logger.info('='.repeat(60));
+    
+    // Worker stats
+    if (Object.keys(this.stats.workerStats).length > 0) {
+      logger.info('👷 Worker Stats:');
+      for (const [workerId, stats] of Object.entries(this.stats.workerStats)) {
+        const workerDuration = (Date.now() - stats.startTime) / 1000;
+        logger.info(`   Worker ${workerId}: Processed: ${stats.processed}, Succeeded: ${stats.succeeded}, Failed: ${stats.failed}, Duration: ${workerDuration}s`);
+      }
+      logger.info('='.repeat(60));
+    }
   }
 }
 

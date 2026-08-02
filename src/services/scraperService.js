@@ -1,184 +1,302 @@
+// src/services/scraperService.js
 const logger = require('../logger');
 const { cache } = require('../cache');
 const { getConnection } = require('../database');
-const { LiveScraper, UpcomingScraper, FinishedScraper } = require('../scraper/crex');
+const {
+  LiveScraper,
+  UpcomingScraper,
+  FinishedScraper,
+  PreviousMatchesScraper,
+  TeamMatchesScraper,
+} = require('../scraper/crex');
+const { PreviousScraper } = require('../scraper/espn');
+const { CricbuzzScraper, CricbuzzArchiveScraper } = require('../scraper/cricbuzz');
 const browserManager = require('../scraper/browser');
 
 class ScraperService {
   constructor() {
     this.crexScrapers = {
-      live: new LiveScraper(),
-      upcoming: new UpcomingScraper(),
-      finished: new FinishedScraper()
+      live: null,
+      upcoming: null,
+      finished: null,
+      previous: null,
+      team: null,
     };
-    
+
+    this.espnScraper = null;
+    this.cricbuzzScraper = null;
+    this.cricbuzzArchiveScraper = null;
     this.initialized = false;
+    this.browserReady = false;
+    this.maxRetries = 3;
+
+    // Lock management
+    this.isScraping = false;
+    this.scrapeLockTimeout = 60000;
+    this.scrapeStartTime = null;
+    this.lastScrapeResult = null;
+    this.lastScrapeTime = null;
   }
 
+  // ============================================================
+  // LAZY LOAD SCRAPERS
+  // ============================================================
+  getScraper(type) {
+    if (!this.crexScrapers[type]) {
+      switch (type) {
+        case 'live':
+          this.crexScrapers.live = new LiveScraper();
+          break;
+        case 'upcoming':
+          this.crexScrapers.upcoming = new UpcomingScraper();
+          break;
+        case 'finished':
+          this.crexScrapers.finished = new FinishedScraper();
+          break;
+        case 'previous':
+          this.crexScrapers.previous = new PreviousMatchesScraper();
+          break;
+        case 'team':
+          this.crexScrapers.team = new TeamMatchesScraper();
+          break;
+        default:
+          throw new Error(`Unknown scraper type: ${type}`);
+      }
+    }
+    return this.crexScrapers[type];
+  }
+
+  getEspnScraper() {
+    if (!this.espnScraper) {
+      this.espnScraper = new PreviousScraper();
+    }
+    return this.espnScraper;
+  }
+
+  getCricbuzzScraper() {
+    if (!this.cricbuzzScraper) {
+      this.cricbuzzScraper = new CricbuzzScraper();
+    }
+    return this.cricbuzzScraper;
+  }
+
+  getCricbuzzArchiveScraper() {
+    if (!this.cricbuzzArchiveScraper) {
+      this.cricbuzzArchiveScraper = new CricbuzzArchiveScraper();
+    }
+    return this.cricbuzzArchiveScraper;
+  }
+
+  // ============================================================
+  // INITIALIZE SERVICES
+  // ============================================================
   async initialize() {
     if (this.initialized) return;
 
-    logger.info('Initializing scraper service with CREX as primary source...');
+    logger.info('Initializing scraper service...');
 
     try {
-      // Test CREX scrapers
-      for (const [type, scraper] of Object.entries(this.crexScrapers)) {
-        try {
-          let testData;
-          if (type === 'live') {
-            testData = await scraper.scrapeLive();
-            logger.info(`✅ CREX ${type} scraper working, found ${testData.data?.length || 0} matches`);
-          } else if (type === 'upcoming') {
-            testData = await scraper.scrapeUpcoming();
-            logger.info(`✅ CREX ${type} scraper working, found ${testData.data?.length || 0} matches`);
-          } else if (type === 'finished') {
-            testData = await scraper.scrapeFinished();
-            logger.info(`✅ CREX ${type} scraper working, found ${testData.data?.length || 0} matches`);
-          }
-        } catch (error) {
-          logger.warn(`⚠️ CREX ${type} scraper test failed: ${error.message}`);
-        }
+      try {
+        await browserManager.healthCheck();
+        this.browserReady = true;
+        logger.info('✅ Browser manager is ready');
+      } catch (error) {
+        logger.warn('⚠️ Browser manager not ready, will initialize on demand:', error.message);
+        this.browserReady = false;
       }
 
-      // Pre-warm cache
       try {
-        const liveResult = await this.crexScrapers.live.scrapeLive();
-        if (liveResult && liveResult.data && liveResult.data.length > 0) {
-          await cache.set('crex_live_matches', liveResult.data, 5);
-          logger.info(`✅ Cache pre-warmed with ${liveResult.data.length} CREX live matches`);
-        }
-
-        const upcomingResult = await this.crexScrapers.upcoming.scrapeUpcoming();
-        if (upcomingResult && upcomingResult.data && upcomingResult.data.length > 0) {
-          await cache.set('crex_upcoming_matches', upcomingResult.data, 5);
-          logger.info(`✅ Cache pre-warmed with ${upcomingResult.data.length} CREX upcoming matches`);
-        }
-
-        const finishedResult = await this.crexScrapers.finished.scrapeFinished();
-        if (finishedResult && finishedResult.data && finishedResult.data.length > 0) {
-          await cache.set('crex_finished_matches', finishedResult.data, 5);
-          logger.info(`✅ Cache pre-warmed with ${finishedResult.data.length} CREX finished matches`);
+        if (cache && typeof cache.get === 'function') {
+          const liveMatches = await cache.get('crex_live_matches');
+          if (liveMatches && liveMatches.length > 0) {
+            logger.info(`✅ Cache has ${liveMatches.length} live matches`);
+          }
+        } else {
+          logger.warn('⚠️ Cache not available');
         }
       } catch (error) {
-        logger.warn('⚠️ Failed to pre-warm cache:', error.message);
+        logger.warn('⚠️ Cache check failed:', error.message);
       }
 
-      logger.info('✅ Cache pre-warmed successfully');
+      logger.info('✅ Scraper service initialized');
     } catch (error) {
-      logger.error('Failed to pre-warm cache:', error);
+      logger.error('Failed to initialize scraper service:', error);
     }
 
     this.initialized = true;
-    logger.info('✅ Scraper service initialized with CREX as primary source');
   }
 
-  async shutdown() {
-    logger.info('Shutting down scraper service...');
+  // ============================================================
+  // ENSURE BROWSER IS READY
+  // ============================================================
+  async ensureBrowser() {
+    if (this.browserReady) return true;
 
-    for (const [type, scraper] of Object.entries(this.crexScrapers)) {
-      if (scraper.closeBrowser && typeof scraper.closeBrowser === 'function') {
-        try {
-          await scraper.closeBrowser();
-          logger.info(`✅ CREX ${type} scraper closed`);
-        } catch (error) {
-          logger.warn(`⚠️ Error closing CREX ${type} scraper:`, error.message);
+    let attempts = 0;
+    while (attempts < this.maxRetries) {
+      try {
+        logger.info(
+          `🔄 Attempting to start browser (attempt ${attempts + 1}/${this.maxRetries})...`
+        );
+        await browserManager.launch();
+        this.browserReady = true;
+        logger.info('✅ Browser started successfully');
+        return true;
+      } catch (error) {
+        attempts++;
+        logger.warn(`⚠️ Browser start attempt ${attempts} failed: ${error.message}`);
+        if (attempts < this.maxRetries) {
+          const waitTime = 2000 * attempts;
+          logger.info(`⏳ Waiting ${waitTime}ms before retry...`);
+          await this.sleep(waitTime);
         }
       }
     }
 
-    this.initialized = false;
-    logger.info('✅ Scraper service shut down');
+    logger.error('❌ Failed to start browser after multiple attempts');
+    return false;
   }
 
-  async cleanup() {
-    logger.info('Cleaning up scraper service...');
-    
-    for (const [type, scraper] of Object.entries(this.crexScrapers)) {
-      if (scraper.closeBrowser && typeof scraper.closeBrowser === 'function') {
-        try {
-          await scraper.closeBrowser();
-          logger.info(`✅ CREX ${type} scraper cleaned up`);
-        } catch (error) {
-          logger.warn(`⚠️ Error cleaning up CREX ${type} scraper:`, error.message);
-        }
-      }
-      if (scraper.cleanup && typeof scraper.cleanup === 'function') {
-        try {
-          await scraper.cleanup();
-          logger.info(`✅ CREX ${type} scraper cleanup completed`);
-        } catch (error) {
-          logger.warn(`⚠️ Error in CREX ${type} cleanup:`, error.message);
-        }
+  // ============================================================
+  // SLEEP
+  // ============================================================
+  async sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ============================================================
+  // CHECK AND RELEASE STALE LOCK
+  // ============================================================
+  checkAndReleaseStaleLock() {
+    if (this.isScraping && this.scrapeStartTime) {
+      const elapsed = Date.now() - this.scrapeStartTime;
+      if (elapsed > this.scrapeLockTimeout) {
+        logger.warn(`⚠️ Stale scrape lock detected (${elapsed}ms), releasing...`);
+        this.isScraping = false;
+        this.scrapeStartTime = null;
+        return true;
       }
     }
-    
-    logger.info('✅ Cleanup completed');
+    return false;
   }
 
   // ============================================================
-  // CREX SCRAPE METHODS - COMPLETELY REWRITTEN
+  // SAFE CACHE SET
   // ============================================================
+  async safeCacheSet(key, value, ttl = 300) {
+    try {
+      if (cache && typeof cache.set === 'function') {
+        await cache.set(key, value, ttl);
+        return true;
+      }
+      logger.warn(`⚠️ Cache not available for set: ${key}`);
+      return false;
+    } catch (error) {
+      logger.warn(`⚠️ Cache set failed for ${key}:`, error.message);
+      return false;
+    }
+  }
 
-  async scrapeLive() {
+  // ============================================================
+  // SAFE CACHE GET
+  // ============================================================
+  async safeCacheGet(key) {
+    try {
+      if (cache && typeof cache.get === 'function') {
+        return await cache.get(key);
+      }
+      return null;
+    } catch (error) {
+      logger.warn(`⚠️ Cache get failed for ${key}:`, error.message);
+      return null;
+    }
+  }
+
+  // ============================================================
+  // SCRAPE LIVE MATCHES
+  // ============================================================
+  async scrapeLive(forceRefresh = true) {
     const startTime = Date.now();
-    logger.info('🔴 Scraping live matches from CREX...');
+    logger.info(`🔴 Scraping live matches from CREX (forceRefresh: ${forceRefresh})...`);
+
+    // Check for stale lock
+    this.checkAndReleaseStaleLock();
+
+    // If scrape is in progress, return cached result
+    if (this.isScraping) {
+      logger.warn('⚠️ Scrape already in progress, returning cached result');
+
+      if (this.lastScrapeResult && this.lastScrapeTime) {
+        const age = Date.now() - this.lastScrapeTime;
+        if (age < 10000) {
+          logger.info(`📊 Returning cached result (${age}ms old)`);
+          return this.lastScrapeResult;
+        }
+      }
+
+      return {
+        success: true,
+        source: 'crex',
+        type: 'live',
+        total: 0,
+        data: [],
+        timestamp: new Date().toISOString(),
+        message: 'Scrape in progress, returning empty',
+        cached: false,
+      };
+    }
+
+    // Acquire lock
+    this.isScraping = true;
+    this.scrapeStartTime = Date.now();
 
     try {
-      // Ensure browser is ready
-      await browserManager.launch();
-      
-      // Get the scraper instance
-      const scraper = this.crexScrapers.live;
-      
-      // Call the scrape method
-      const result = await scraper.scrapeLive();
-      
-      // Log detailed result for debugging
-      logger.info(`📊 Live scraper response:`, {
-        success: result?.success === true,
-        hasData: Array.isArray(result?.data),
-        dataLength: result?.data?.length || 0,
-        timestamp: result?.timestamp
-      });
-      
-      // Check if the scraper was successful and has data
-      if (result && result.success === true) {
+      const browserOk = await this.ensureBrowser();
+      if (!browserOk) {
+        this.isScraping = false;
+        this.scrapeStartTime = null;
+        throw new Error('Browser failed to start');
+      }
+
+      const scraper = this.getScraper('live');
+      const result = await scraper.scrapeLive(forceRefresh);
+
+      // Store result for caching
+      this.lastScrapeResult = result;
+      this.lastScrapeTime = Date.now();
+
+      if (result && result.data !== undefined && result.data !== null) {
         const matches = Array.isArray(result.data) ? result.data : [];
-        
-        logger.info(`✅ Live scraper returned ${matches.length} matches`);
-        
+
         if (matches.length > 0) {
           // Store in database
-          try {
-            await this.storeMatches(matches.map(m => ({ ...m, source: 'crex-live' })));
-            logger.info(`✅ Stored ${matches.length} matches in database`);
-          } catch (dbError) {
-            logger.warn(`⚠️ Database storage failed: ${dbError.message}`);
-          }
-          
-          // Update cache
-          try {
-            await cache.set('crex_live_matches', matches, 5);
-            logger.info(`✅ Cached ${matches.length} matches`);
-          } catch (cacheError) {
-            logger.warn(`⚠️ Cache update failed: ${cacheError.message}`);
-          }
-          
+          this.storeMatches(matches.map((m) => ({ ...m, source: 'crex-live' }))).catch((err) =>
+            logger.warn(`⚠️ Database storage failed: ${err.message}`)
+          );
+
+          await this.safeCacheSet('crex_live_matches', matches, 30);
+
           const duration = Date.now() - startTime;
-          logger.info(`✅ Successfully got ${matches.length} live matches from CREX in ${duration}ms`);
-          
-          // Return success response
+          logger.info(
+            `✅ Successfully got ${matches.length} live matches from CREX in ${duration}ms`
+          );
+
+          this.isScraping = false;
+          this.scrapeStartTime = null;
           return {
             success: true,
             source: 'crex',
             type: 'live',
             total: matches.length,
             data: matches,
-            timestamp: result.timestamp || new Date().toISOString()
+            timestamp: result.timestamp || new Date().toISOString(),
+            duration: duration,
+            cacheBuster: result.cacheBuster || Date.now(),
           };
         } else {
-          // No matches found but scraper was successful
           logger.info('No live matches from CREX');
+          this.isScraping = false;
+          this.scrapeStartTime = null;
           return {
             success: true,
             source: 'crex',
@@ -186,18 +304,13 @@ class ScraperService {
             total: 0,
             data: [],
             timestamp: new Date().toISOString(),
-            message: 'No live matches currently in progress'
+            message: 'No live matches currently in progress',
           };
         }
       }
-      
-      // If we reach here, the scraper returned an error response
-      logger.warn('Live scraper returned error response:', {
-        success: result?.success,
-        error: result?.error,
-        message: result?.message
-      });
-      
+
+      this.isScraping = false;
+      this.scrapeStartTime = null;
       return {
         success: false,
         source: 'crex',
@@ -205,14 +318,14 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: result?.error || 'Scraper returned error response'
+        error: result?.error || 'Scraper returned error response',
       };
-      
     } catch (error) {
-      // Catch any unexpected errors
-      logger.error(`CREX live scraper failed with error:`, error.message);
+      logger.error(`CREX live scraper failed:`, error.message);
       logger.error(error.stack);
-      
+
+      this.isScraping = false;
+      this.scrapeStartTime = null;
       return {
         success: false,
         source: 'crex',
@@ -220,48 +333,47 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: error.message
+        error: error.message,
       };
     }
   }
 
+  // ============================================================
+  // SCRAPE UPCOMING MATCHES
+  // ============================================================
   async scrapeUpcoming() {
     const startTime = Date.now();
     logger.info('📅 Scraping upcoming matches from CREX...');
 
     try {
-      await browserManager.launch();
-      
-      const scraper = this.crexScrapers.upcoming;
+      const browserOk = await this.ensureBrowser();
+      if (!browserOk) {
+        throw new Error('Browser failed to start');
+      }
+
+      const scraper = this.getScraper('upcoming');
       const result = await scraper.scrapeUpcoming();
-      
-      logger.info(`📊 Upcoming scraper response:`, {
-        success: result?.success === true,
-        hasData: Array.isArray(result?.data),
-        dataLength: result?.data?.length || 0
-      });
-      
-      if (result && result.success === true) {
+
+      if (result && result.data !== undefined && result.data !== null) {
         const matches = Array.isArray(result.data) ? result.data : [];
-        
+
         if (matches.length > 0) {
-          try {
-            await this.storeMatches(matches.map(m => ({ ...m, source: 'crex-upcoming' })));
-            await cache.set('crex_upcoming_matches', matches, 5);
-          } catch (e) {
-            logger.warn(`⚠️ Storage error: ${e.message}`);
-          }
-          
+          this.storeMatches(matches.map((m) => ({ ...m, source: 'crex-upcoming' }))).catch((err) =>
+            logger.warn(`⚠️ Database storage failed: ${err.message}`)
+          );
+
+          await this.safeCacheSet('crex_upcoming_matches', matches, 300);
+
           const duration = Date.now() - startTime;
           logger.info(`✅ Got ${matches.length} upcoming matches from CREX in ${duration}ms`);
-          
+
           return {
             success: true,
             source: 'crex',
             type: 'upcoming',
             total: matches.length,
             data: matches,
-            timestamp: result.timestamp || new Date().toISOString()
+            timestamp: result.timestamp || new Date().toISOString(),
           };
         } else {
           logger.info('No upcoming matches from CREX');
@@ -272,11 +384,11 @@ class ScraperService {
             total: 0,
             data: [],
             timestamp: new Date().toISOString(),
-            message: 'No upcoming matches found'
+            message: 'No upcoming matches found',
           };
         }
       }
-      
+
       return {
         success: false,
         source: 'crex',
@@ -284,12 +396,10 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: result?.error || 'Scraper returned error response'
+        error: result?.error || 'Scraper returned error response',
       };
-      
     } catch (error) {
       logger.error(`CREX upcoming scraper failed:`, error.message);
-      
       return {
         success: false,
         source: 'crex',
@@ -297,48 +407,47 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: error.message
+        error: error.message,
       };
     }
   }
 
+  // ============================================================
+  // SCRAPE FINISHED MATCHES
+  // ============================================================
   async scrapeFinished() {
     const startTime = Date.now();
     logger.info('🏁 Scraping finished matches from CREX...');
 
     try {
-      await browserManager.launch();
-      
-      const scraper = this.crexScrapers.finished;
+      const browserOk = await this.ensureBrowser();
+      if (!browserOk) {
+        throw new Error('Browser failed to start');
+      }
+
+      const scraper = this.getScraper('finished');
       const result = await scraper.scrapeFinished();
-      
-      logger.info(`📊 Finished scraper response:`, {
-        success: result?.success === true,
-        hasData: Array.isArray(result?.data),
-        dataLength: result?.data?.length || 0
-      });
-      
-      if (result && result.success === true) {
+
+      if (result && result.data !== undefined && result.data !== null) {
         const matches = Array.isArray(result.data) ? result.data : [];
-        
+
         if (matches.length > 0) {
-          try {
-            await this.storeMatches(matches.map(m => ({ ...m, source: 'crex-finished' })));
-            await cache.set('crex_finished_matches', matches, 5);
-          } catch (e) {
-            logger.warn(`⚠️ Storage error: ${e.message}`);
-          }
-          
+          this.storeMatches(matches.map((m) => ({ ...m, source: 'crex-finished' }))).catch((err) =>
+            logger.warn(`⚠️ Database storage failed: ${err.message}`)
+          );
+
+          await this.safeCacheSet('crex_finished_matches', matches, 300);
+
           const duration = Date.now() - startTime;
           logger.info(`✅ Got ${matches.length} finished matches from CREX in ${duration}ms`);
-          
+
           return {
             success: true,
             source: 'crex',
             type: 'finished',
             total: matches.length,
             data: matches,
-            timestamp: result.timestamp || new Date().toISOString()
+            timestamp: result.timestamp || new Date().toISOString(),
           };
         } else {
           logger.info('No finished matches from CREX');
@@ -349,11 +458,11 @@ class ScraperService {
             total: 0,
             data: [],
             timestamp: new Date().toISOString(),
-            message: 'No finished matches found'
+            message: 'No finished matches found',
           };
         }
       }
-      
+
       return {
         success: false,
         source: 'crex',
@@ -361,12 +470,10 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: result?.error || 'Scraper returned error response'
+        error: result?.error || 'Scraper returned error response',
       };
-      
     } catch (error) {
       logger.error(`CREX finished scraper failed:`, error.message);
-      
       return {
         success: false,
         source: 'crex',
@@ -374,105 +481,228 @@ class ScraperService {
         total: 0,
         data: [],
         timestamp: new Date().toISOString(),
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   // ============================================================
-  // SCRAPE ALL MATCH TYPES
+  // SCRAPE PREVIOUS MATCHES
   // ============================================================
-
-  async scrapeAll() {
+  async scrapePreviousMatches() {
     const startTime = Date.now();
-    logger.info('📊 Scraping all match types from CREX...');
-
-    const results = {
-      live: null,
-      upcoming: null,
-      finished: null,
-      errors: []
-    };
+    logger.info('📜 Scraping previous matches from CREX...');
 
     try {
-      results.live = await this.scrapeLive();
+      const browserOk = await this.ensureBrowser();
+      if (!browserOk) {
+        throw new Error('Browser failed to start');
+      }
+
+      const scraper = this.getScraper('previous');
+      const result = await scraper.scrapePreviousMatches();
+
+      if (result && result.data !== undefined && result.data !== null) {
+        const matches = Array.isArray(result.data) ? result.data : [];
+
+        if (matches.length > 0) {
+          this.storeMatches(matches.map((m) => ({ ...m, source: 'crex-previous' }))).catch((err) =>
+            logger.warn(`⚠️ Database storage failed: ${err.message}`)
+          );
+
+          await this.safeCacheSet('crex_previous_matches', matches, 300);
+
+          const duration = Date.now() - startTime;
+          logger.info(`✅ Got ${matches.length} previous matches from CREX in ${duration}ms`);
+
+          return {
+            success: true,
+            source: 'crex',
+            type: 'previous',
+            total: matches.length,
+            data: matches,
+            timestamp: result.timestamp || new Date().toISOString(),
+          };
+        } else {
+          logger.info('No previous matches from CREX');
+          return {
+            success: true,
+            source: 'crex',
+            type: 'previous',
+            total: 0,
+            data: [],
+            timestamp: new Date().toISOString(),
+            message: 'No previous matches found',
+          };
+        }
+      }
+
+      return {
+        success: false,
+        source: 'crex',
+        type: 'previous',
+        total: 0,
+        data: [],
+        timestamp: new Date().toISOString(),
+        error: result?.error || 'Scraper returned error response',
+      };
     } catch (error) {
-      results.errors.push({ type: 'live', error: error.message });
+      logger.error(`CREX previous matches scraper failed:`, error.message);
+      return {
+        success: false,
+        source: 'crex',
+        type: 'previous',
+        total: 0,
+        data: [],
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      };
     }
-
-    try {
-      results.upcoming = await this.scrapeUpcoming();
-    } catch (error) {
-      results.errors.push({ type: 'upcoming', error: error.message });
-    }
-
-    try {
-      results.finished = await this.scrapeFinished();
-    } catch (error) {
-      results.errors.push({ type: 'finished', error: error.message });
-    }
-
-    const duration = Date.now() - startTime;
-    
-    const liveCount = results.live?.data?.length || 0;
-    const upcomingCount = results.upcoming?.data?.length || 0;
-    const finishedCount = results.finished?.data?.length || 0;
-    
-    logger.info(`✅ Scraped all matches in ${duration}ms`);
-    logger.info(`  Live: ${liveCount}`);
-    logger.info(`  Upcoming: ${upcomingCount}`);
-    logger.info(`  Finished: ${finishedCount}`);
-    logger.info(`  Total: ${liveCount + upcomingCount + finishedCount}`);
-
-    return {
-      success: true,
-      source: 'crex',
-      timestamp: new Date().toISOString(),
-      total: liveCount + upcomingCount + finishedCount,
-      data: {
-        live: results.live,
-        upcoming: results.upcoming,
-        finished: results.finished
-      },
-      errors: results.errors.length > 0 ? results.errors : undefined
-    };
   }
 
   // ============================================================
-  // GET MATCH DETAILS
+  // SCRAPE TEAM MATCHES
   // ============================================================
+  async scrapeTeamMatches(teamName = 'services-GR') {
+    const startTime = Date.now();
+    logger.info(`📋 Scraping team matches for: ${teamName}`);
 
-  async getMatchDetails(matchId) {
     try {
-      const cached = await cache.get(`match_${matchId}`);
-      if (cached) return cached;
-
-      const db = getConnection();
-      const [rows] = await db.query('SELECT * FROM matches WHERE id = ?', [matchId]);
-
-      if (rows.length > 0) {
-        const [details] = await db.query('SELECT * FROM match_details WHERE match_id = ?', [matchId]);
-
-        const matchData = rows[0];
-        if (details.length > 0) {
-          matchData.details = details[0].details;
-        }
-
-        await cache.set(`match_${matchId}`, matchData, 3600);
-        return matchData;
+      const browserOk = await this.ensureBrowser();
+      if (!browserOk) {
+        throw new Error('Browser failed to start');
       }
 
-      return null;
+      const scraper = this.getScraper('team');
+      const result = await scraper.scrapeTeamMatches(teamName);
+
+      if (result && result.data && result.data.length > 0) {
+        this.storeMatches(result.data.map((m) => ({ ...m, source: 'crex-team' }))).catch((err) =>
+          logger.warn(`⚠️ Database storage failed: ${err.message}`)
+        );
+
+        await this.safeCacheSet(`team_matches_${teamName}`, result.data, 300);
+
+        const duration = Date.now() - startTime;
+        logger.info(`✅ Got ${result.data.length} matches for team ${teamName} in ${duration}ms`);
+
+        return {
+          success: true,
+          source: 'crex',
+          type: 'team',
+          team: teamName,
+          total: result.data.length,
+          data: result.data,
+          timestamp: result.timestamp || new Date().toISOString(),
+        };
+      }
+
+      logger.info(`No matches found for team: ${teamName}`);
+      return {
+        success: true,
+        source: 'crex',
+        type: 'team',
+        team: teamName,
+        total: 0,
+        data: [],
+        timestamp: new Date().toISOString(),
+        message: 'No matches found for this team',
+      };
     } catch (error) {
-      logger.error(`Error getting match details for ${matchId}:`, error);
-      return null;
+      logger.error(`Team matches scraper failed for ${teamName}:`, error.message);
+      return {
+        success: false,
+        source: 'crex',
+        type: 'team',
+        team: teamName,
+        total: 0,
+        data: [],
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      };
+    }
+  }
+
+  // ============================================================
+  // DATABASE STORAGE METHODS
+  // ============================================================
+  async storeMatches(matches) {
+    if (!matches || matches.length === 0) return;
+    for (const match of matches) {
+      await this.storeMatch(match);
+    }
+  }
+
+  async storeMatch(match) {
+    const db = getConnection();
+
+    try {
+      const query = `
+        INSERT INTO matches (
+          id, title, match_type, status, venue, team1, team2, 
+          score1, score2, result, match_date, source, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE
+          title = VALUES(title),
+          match_type = VALUES(match_type),
+          status = VALUES(status),
+          venue = VALUES(venue),
+          team1 = VALUES(team1),
+          team2 = VALUES(team2),
+          score1 = VALUES(score1),
+          score2 = VALUES(score2),
+          result = VALUES(result),
+          match_date = VALUES(match_date),
+          source = VALUES(source),
+          updated_at = NOW()
+      `;
+
+      const matchId = match.match_id || match.matchId || `match_${Date.now()}`;
+
+      const title = match.matchTitle || match.series?.name || '';
+      const matchType = match.match?.format || match.format || 'T20I';
+      const status = match.match?.status || match.status || 'Unknown';
+      const venue = match.venue?.name || match.venue || '';
+      const team1 = match.teams?.home?.name || match.team1?.name || '';
+      const team2 = match.teams?.away?.name || match.team2?.name || '';
+      const score1 = match.scoreboard?.batting_team?.score || match.team1?.score || '';
+      const score2 = match.scoreboard?.bowling_team?.score || match.team2?.score || '';
+      const result = match.result || '';
+      const matchDate = match.match?.start_time || match.startTime || null;
+      const source = match.source || 'crex';
+
+      await db.query(query, [
+        matchId,
+        title,
+        matchType,
+        status,
+        venue,
+        team1,
+        team2,
+        score1,
+        score2,
+        result,
+        matchDate,
+        source,
+      ]);
+
+      const detailsQuery = `
+        INSERT INTO match_details (id, match_id, details)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          details = VALUES(details),
+          updated_at = NOW()
+      `;
+
+      await db.query(detailsQuery, [`detail_${matchId}`, matchId, JSON.stringify(match)]);
+    } catch (error) {
+      logger.error(`Error storing match ${match.match_id || match.matchId}:`, error.message);
     }
   }
 
   // ============================================================
   // GET MATCHES WITH FILTERS
   // ============================================================
-
   async getMatches(filters = {}) {
     const db = getConnection();
     let query = 'SELECT * FROM matches WHERE 1=1';
@@ -498,7 +728,14 @@ class ScraperService {
       params.push(`%${filters.series}%`);
     }
 
-    query += ' ORDER BY match_date DESC LIMIT 100';
+    if (filters.source) {
+      query += ' AND source = ?';
+      params.push(filters.source);
+    }
+
+    query += ' ORDER BY match_date DESC LIMIT ? OFFSET ?';
+    params.push(filters.limit || 50);
+    params.push(filters.offset || 0);
 
     try {
       const [rows] = await db.query(query, params);
@@ -512,130 +749,170 @@ class ScraperService {
   // ============================================================
   // GET SOURCE STATUS
   // ============================================================
-
   async getSourceStatus() {
     const browserStats = browserManager.getStats ? browserManager.getStats() : {};
-    
+
     const status = {
-      primary: {
-        source: 'crex',
-        enabled: true,
-        types: {
-          live: { enabled: true, lastCheck: new Date().toISOString() },
-          upcoming: { enabled: true, lastCheck: new Date().toISOString() },
-          finished: { enabled: true, lastCheck: new Date().toISOString() }
-        }
+      sources: {
+        crex: {
+          enabled: true,
+          types: {
+            live: { enabled: true, lastCheck: new Date().toISOString() },
+            upcoming: { enabled: true, lastCheck: new Date().toISOString() },
+            finished: { enabled: true, lastCheck: new Date().toISOString() },
+            previous: { enabled: true, lastCheck: new Date().toISOString() },
+            team: { enabled: true, lastCheck: new Date().toISOString() },
+          },
+        },
+        espncricinfo: {
+          enabled: true,
+          types: {
+            previous: { enabled: true, lastCheck: new Date().toISOString() },
+          },
+        },
+        cricbuzz: {
+          enabled: true,
+          types: {
+            live: { enabled: true, lastCheck: new Date().toISOString() },
+            archive: { enabled: true, lastCheck: new Date().toISOString() },
+          },
+        },
       },
       initialized: this.initialized,
       browser: {
-        ready: browserManager.isReady || false,
-        stats: browserStats
-      }
+        ready: this.browserReady || false,
+        stats: browserStats,
+      },
+      isScraping: this.isScraping,
+      lastScrapeTime: this.lastScrapeTime,
     };
 
     return status;
   }
 
   // ============================================================
-  // FORCE SCRAPE
+  // FORCE RELEASE LOCK
   // ============================================================
-
-  async forceScrape(options = {}) {
-    const { type } = options;
-
-    if (type === 'live') {
-      return await this.scrapeLive();
-    } else if (type === 'upcoming') {
-      return await this.scrapeUpcoming();
-    } else if (type === 'finished') {
-      return await this.scrapeFinished();
-    } else {
-      return await this.scrapeAll();
+  forceReleaseLock() {
+    if (this.isScraping) {
+      logger.warn('🔓 Force releasing scrape lock');
+      this.isScraping = false;
+      this.scrapeStartTime = null;
+      return true;
     }
+    return false;
   }
 
   // ============================================================
-  // DATABASE STORAGE METHODS
+  // START REAL-TIME UPDATES
   // ============================================================
+  async startRealTimeUpdates(options = {}) {
+    const { interval = 5000, onMatchUpdate, onMatchComplete, onNewMatch } = options;
 
-  async storeMatches(matches) {
-    if (!matches || matches.length === 0) return;
-    const db = getConnection();
+    const liveScraper = this.getScraper('live');
 
-    for (const match of matches) {
-      await this.storeMatch(match);
-    }
+    return await liveScraper.startRealTimeUpdates({
+      interval: interval,
+      onUpdate: onMatchUpdate,
+      onComplete: onMatchComplete,
+      onNewMatch: onNewMatch,
+    });
   }
 
-  async storeMatch(match) {
-    const db = getConnection();
+  // ============================================================
+  // STOP REAL-TIME UPDATES
+  // ============================================================
+  stopRealTimeUpdates() {
+    const liveScraper = this.getScraper('live');
+    return liveScraper.stopRealTimeUpdates();
+  }
 
+  // ============================================================
+  // GET REAL-TIME STATUS
+  // ============================================================
+  getRealTimeStatus() {
+    const liveScraper = this.getScraper('live');
+    const activeMatches = liveScraper.activeMatches || new Map();
+
+    const matches = [];
+    for (const [matchId, matchData] of activeMatches) {
+      const match = matchData.data;
+      const age = (Date.now() - matchData.lastUpdate) / 1000;
+
+      matches.push({
+        matchId: matchId,
+        homeTeam: match.teams?.home?.name || 'Unknown',
+        awayTeam: match.teams?.away?.name || 'Unknown',
+        score: match.scoreboard?.batting_team?.score || '0',
+        wickets: match.scoreboard?.batting_team?.wickets || '0',
+        overs: match.scoreboard?.batting_team?.overs || '0',
+        status: match.match?.status || 'Live',
+        lastUpdate: matchData.lastUpdate,
+        ageSeconds: age,
+        isComplete: matchData.isComplete || false,
+      });
+    }
+
+    return {
+      isPolling: liveScraper.isPolling || false,
+      activeMatches: matches,
+      totalMatches: matches.length,
+    };
+  }
+
+  // ============================================================
+  // CLEANUP
+  // ============================================================
+  async cleanup() {
+    logger.info('🧹 Cleaning up scraper service...');
+
+    // Force release lock
+    this.forceReleaseLock();
+
+    // Stop real-time updates
+    this.stopRealTimeUpdates();
+
+    // Close CREX scrapers
+    for (const [type, scraper] of Object.entries(this.crexScrapers)) {
+      if (scraper) {
+        if (scraper.closeBrowser && typeof scraper.closeBrowser === 'function') {
+          try {
+            await scraper.closeBrowser();
+            logger.info(`✅ CREX ${type} scraper cleaned up`);
+          } catch (error) {
+            logger.warn(`⚠️ Error cleaning up CREX ${type} scraper:`, error.message);
+          }
+        }
+        if (scraper.cleanup && typeof scraper.cleanup === 'function') {
+          try {
+            await scraper.cleanup();
+            logger.info(`✅ CREX ${type} scraper cleanup completed`);
+          } catch (error) {
+            logger.warn(`⚠️ Error in CREX ${type} cleanup:`, error.message);
+          }
+        }
+      }
+    }
+
+    // Reset scrapers
+    this.crexScrapers = {
+      live: null,
+      upcoming: null,
+      finished: null,
+      previous: null,
+      team: null,
+    };
+
+    // Close browser
     try {
-      const query = `
-        INSERT INTO matches (
-          id, title, match_type, status, venue, team1, team2, 
-          score1, score2, result, match_date, source
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          title = VALUES(title),
-          match_type = VALUES(match_type),
-          status = VALUES(status),
-          venue = VALUES(venue),
-          team1 = VALUES(team1),
-          team2 = VALUES(team2),
-          score1 = VALUES(score1),
-          score2 = VALUES(score2),
-          result = VALUES(result),
-          match_date = VALUES(match_date),
-          source = VALUES(source),
-          updated_at = CURRENT_TIMESTAMP
-      `;
-
-      const matchId = match.match_id || match.matchId || `match_${Date.now()}`;
-      
-      const title = match.matchTitle || match.series?.name || '';
-      const matchType = match.match?.format || match.format || 'T20I';
-      const status = match.match?.status || match.status || 'Unknown';
-      const venue = match.venue?.name || match.venue || '';
-      const team1 = match.teams?.home?.name || match.team1?.name || '';
-      const team2 = match.teams?.away?.name || match.team2?.name || '';
-      const score1 = match.scoreboard?.batting_team?.score || match.team1?.score || '';
-      const score2 = match.scoreboard?.bowling_team?.score || match.team2?.score || '';
-      const result = match.result || '';
-      const matchDate = match.match?.start_time || match.startTime || null;
-      const source = match.source || 'crex';
-
-      await db.query(query, [
-        matchId,
-        title,
-        matchType,
-        status,
-        venue,
-        team1,
-        team2,
-        score1,
-        score2,
-        result,
-        matchDate,
-        source
-      ]);
-
-      const detailsQuery = `
-        INSERT INTO match_details (id, match_id, details)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          details = VALUES(details),
-          updated_at = CURRENT_TIMESTAMP
-      `;
-
-      await db.query(detailsQuery, [
-        `detail_${matchId}`,
-        matchId,
-        JSON.stringify(match),
-      ]);
+      await browserManager.close();
+      this.browserReady = false;
+      logger.info('✅ Browser closed during cleanup');
     } catch (error) {
-      logger.error(`Error storing match ${match.match_id || match.matchId}:`, error.message);
+      logger.warn('⚠️ Error closing browser during cleanup:', error.message);
     }
+
+    logger.info('✅ Cleanup completed');
   }
 }
 

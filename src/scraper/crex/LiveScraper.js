@@ -13,14 +13,16 @@ const deepLog = (label, data) => {
   console.log(`\n${'═'.repeat(80)}`);
   console.log(`📊 ${label}`);
   console.log(`${'═'.repeat(80)}`);
-  console.log(util.inspect(data, {
-    depth: null,
-    colors: true,
-    compact: false,
-    maxArrayLength: null,
-    maxStringLength: null,
-    showHidden: false
-  }));
+  console.log(
+    util.inspect(data, {
+      depth: null,
+      colors: true,
+      compact: false,
+      maxArrayLength: null,
+      maxStringLength: null,
+      showHidden: false,
+    })
+  );
   console.log(`${'═'.repeat(80)}\n`);
 };
 
@@ -34,11 +36,21 @@ class LiveScraper extends BaseCrexScraper {
       merged: 0,
       errors: 0,
       weatherSuccess: 0,
-      weatherFailed: 0
+      weatherFailed: 0,
     };
-    
+
+    // Agent configuration
+    this.numberOfAgents = 4;
+    this.agentStaggerDelay = 3000;
+    this.matchDelay = 2000;
+
+    // Real-time update interval
+    this.updateInterval = 5000;
+    this.isPolling = false;
+    this.pollingInterval = null;
+    this.activeMatches = new Map();
+
     // Rate limiting
-    this.requestDelay = 3000;
     this.maxRetries = 3;
     this.browser = null;
     this.page = null;
@@ -46,15 +58,33 @@ class LiveScraper extends BaseCrexScraper {
     this.requestCount = 0;
     this.lastRequestTime = 0;
     this.isBrowserInitialized = false;
-    
+
+    // Lock management
+    this.isScraping = false;
+    this.scrapeLockTimeout = 60000;
+    this.scrapeStartTime = null;
+
     // Browser manager
     this.browserManager = browserManager;
     this.useBrowserManager = true;
-    
+
     // Weather caches
     this.geoCache = new Map();
     this.weatherCache = new Map();
-    
+
+    // Track processed URLs
+    this.processedUrls = new Set();
+    this.agentResults = [];
+    this.agentStats = {};
+
+    // Cache buster for real-time data
+    this.cacheBuster = Date.now();
+
+    // Callbacks for real-time updates
+    this.onMatchUpdate = null;
+    this.onMatchComplete = null;
+    this.onNewMatch = null;
+
     // Weather code mapping
     this.weatherCodeMap = {
       0: { condition: 'Clear Sky', icon: '01d' },
@@ -77,75 +107,124 @@ class LiveScraper extends BaseCrexScraper {
       82: { condition: 'Heavy Rain Showers', icon: '09d' },
       95: { condition: 'Thunderstorm', icon: '11d' },
       96: { condition: 'Thunderstorm', icon: '11d' },
-      99: { condition: 'Thunderstorm', icon: '11d' }
+      99: { condition: 'Thunderstorm', icon: '11d' },
     };
-    
-    // Country mapping for team names
+
+    // Country mapping
     this.countryMap = {
-      'India': 'India',
-      'England': 'England',
-      'Australia': 'Australia',
-      'Pakistan': 'Pakistan',
+      India: 'India',
+      England: 'England',
+      Australia: 'Australia',
+      Pakistan: 'Pakistan',
       'New Zealand': 'New Zealand',
       'South Africa': 'South Africa',
       'West Indies': 'West Indies',
       'Sri Lanka': 'Sri Lanka',
-      'Bangladesh': 'Bangladesh',
-      'Afghanistan': 'Afghanistan',
-      'Zimbabwe': 'Zimbabwe',
-      'Ireland': 'Ireland',
-      'Nepal': 'Nepal',
-      'Namibia': 'Namibia',
-      'Guyana': 'Guyana'
+      Bangladesh: 'Bangladesh',
+      Afghanistan: 'Afghanistan',
+      Zimbabwe: 'Zimbabwe',
+      Ireland: 'Ireland',
+      Nepal: 'Nepal',
+      Namibia: 'Namibia',
+      Guyana: 'Guyana',
     };
-    
-    // Team abbreviation to country mapping
-    this.teamCountryMap = {
-      'PAK': 'Pakistan',
-      'WI': 'West Indies',
-      'IND': 'India',
-      'ENG': 'England',
-      'AUS': 'Australia',
-      'NZ': 'New Zealand',
-      'SA': 'South Africa',
-      'SL': 'Sri Lanka',
-      'BAN': 'Bangladesh',
-      'AFG': 'Afghanistan',
-      'ZIM': 'Zimbabwe',
-      'IRE': 'Ireland',
-      'NEP': 'Nepal',
-      'NAM': 'Namibia',
-      'GUY': 'Guyana',
-      'LANCS': 'England',
-      'LEIC': 'England',
-      'WOR': 'England',
-      'HAM': 'England',
-      'MDX': 'England',
-      'KT': 'England',
-      'LS': 'England',
-      'TR': 'England',
-      'DS': 'Sri Lanka',
-      'GG': 'Sri Lanka',
-      'Live PAK': 'Pakistan'
+
+    // City to country mapping
+    this.cityCountryMap = {
+      London: 'England',
+      Birmingham: 'England',
+      Manchester: 'England',
+      Leeds: 'England',
+      Nottingham: 'England',
+      Southampton: 'England',
+      Taunton: 'England',
+      Cardiff: 'Wales',
+      Edinburgh: 'Scotland',
+      Dublin: 'Ireland',
+      Melbourne: 'Australia',
+      Sydney: 'Australia',
+      Brisbane: 'Australia',
+      Perth: 'Australia',
+      Adelaide: 'Australia',
+      Auckland: 'New Zealand',
+      Wellington: 'New Zealand',
+      Christchurch: 'New Zealand',
+      Mumbai: 'India',
+      Delhi: 'India',
+      Bangalore: 'India',
+      Chennai: 'India',
+      Kolkata: 'India',
+      Hyderabad: 'India',
+      Ahmedabad: 'India',
+      Pune: 'India',
+      Lahore: 'Pakistan',
+      Karachi: 'Pakistan',
+      Rawalpindi: 'Pakistan',
+      Multan: 'Pakistan',
+      Dhaka: 'Bangladesh',
+      Colombo: 'Sri Lanka',
+      Kandy: 'Sri Lanka',
+      Galle: 'Sri Lanka',
+      Dambulla: 'Sri Lanka',
+      Kathmandu: 'Nepal',
+      Dubai: 'UAE',
+      'Abu Dhabi': 'UAE',
+      Sharjah: 'UAE',
+      Johannesburg: 'South Africa',
+      'Cape Town': 'South Africa',
+      Durban: 'South Africa',
+      Centurion: 'South Africa',
+      Harare: 'Zimbabwe',
+      Bulawayo: 'Zimbabwe',
+      Windhoek: 'Namibia',
+      'Port of Spain': 'Trinidad and Tobago',
+      Bridgetown: 'Barbados',
+      Georgetown: 'Guyana',
+      Providence: 'Guyana',
     };
-    
+
+    // Tournament to location mapping
+    this.tournamentLocationMap = {
+      'The Hundred': 'England',
+      'The Hundred W': 'England',
+      'England One Day Cup': 'England',
+      'County Championship': 'England',
+      IPL: 'India',
+      'Indian Premier League': 'India',
+      BBL: 'Australia',
+      'Big Bash': 'Australia',
+      CPL: 'West Indies',
+      'Caribbean Premier League': 'West Indies',
+      PSL: 'Pakistan',
+      'Pakistan Super League': 'Pakistan',
+      LPL: 'Sri Lanka',
+      'Lanka Premier League': 'Sri Lanka',
+      DPL: 'India',
+      'Delhi Premier League': 'India',
+      'Nepal Premier League': 'Nepal',
+      'Namibia T20': 'Namibia',
+      'CWC League': 'Namibia',
+      'ECS England': 'England',
+      'England-Hornchurch T10': 'England',
+    };
+
     // Team ID mapping
     this.teamIdMap = {
-      'India': 'team_ind',
-      'England': 'team_eng',
-      'Australia': 'team_aus',
-      'Pakistan': 'team_pak',
+      India: 'team_ind',
+      England: 'team_eng',
+      Australia: 'team_aus',
+      Pakistan: 'team_pak',
       'New Zealand': 'team_nz',
       'South Africa': 'team_sa',
       'West Indies': 'team_wi',
       'Sri Lanka': 'team_sl',
-      'Bangladesh': 'team_ban',
-      'Afghanistan': 'team_afg',
-      'Zimbabwe': 'team_zim',
-      'Ireland': 'team_ire',
-      'Nepal': 'team_nep',
-      'Namibia': 'team_nam',
-      'Maharani': 'team_maharani',
+      Bangladesh: 'team_ban',
+      Afghanistan: 'team_afg',
+      Zimbabwe: 'team_zim',
+      Ireland: 'team_ire',
+      Nepal: 'team_nep',
+      Namibia: 'team_nam',
+      Maharani: 'team_maharani',
       'Galle Gallants': 'team_galle',
       'Dambulla Sixers': 'team_dambulla',
       'Kandy Falcons': 'team_kandy',
@@ -160,16 +239,16 @@ class LiveScraper extends BaseCrexScraper {
       'Trent Rockets': 'team_trent_rockets',
       'Oval Invincibles': 'team_oval',
       'Northern Superchargers': 'team_northern',
-      'Worcestershire': 'team_worcs',
-      'Derbyshire': 'team_derby',
+      Worcestershire: 'team_worcs',
+      Derbyshire: 'team_derby',
       'Lahore Qalandars': 'team_lahore',
       'Perth Scorchers': 'team_perth',
       'Guyana Amazon Warriors': 'team_guyana',
       'San Francisco Unicorns': 'team_san_francisco',
       'BP-W': 'team_bp_w',
       'TR-W': 'team_tr_w',
-      'GLCS': 'team_glcs',
-      'SOM': 'team_som'
+      GLCS: 'team_glcs',
+      SOM: 'team_som',
     };
   }
 
@@ -178,21 +257,86 @@ class LiveScraper extends BaseCrexScraper {
   // ============================================================
   getCountryFromTeamName(teamName) {
     if (!teamName) return null;
-    
-    if (this.teamCountryMap[teamName]) return this.teamCountryMap[teamName];
-    
-    for (const [key, value] of Object.entries(this.teamCountryMap)) {
-      if (teamName.includes(key) || key.includes(teamName)) {
-        return value;
-      }
-    }
-    
+
     for (const [key, country] of Object.entries(this.countryMap)) {
       if (teamName.includes(key) || key.includes(teamName)) {
         return country;
       }
     }
-    
+
+    for (const [city, country] of Object.entries(this.cityCountryMap)) {
+      if (teamName.includes(city) || city.includes(teamName)) {
+        return country;
+      }
+    }
+
+    return null;
+  }
+
+  // ============================================================
+  // GET LOCATION FROM SERIES NAME
+  // ============================================================
+  getLocationFromSeries(seriesName) {
+    if (!seriesName) return null;
+
+    for (const [tournament, location] of Object.entries(this.tournamentLocationMap)) {
+      if (seriesName.includes(tournament) || tournament.includes(seriesName)) {
+        return location;
+      }
+    }
+
+    for (const [country] of Object.entries(this.countryMap)) {
+      if (seriesName.includes(country)) {
+        return country;
+      }
+    }
+
+    for (const [city, country] of Object.entries(this.cityCountryMap)) {
+      if (seriesName.includes(city)) {
+        return country;
+      }
+    }
+
+    if (seriesName.includes('W ') || seriesName.includes('Women')) {
+      return 'England';
+    }
+
+    if (seriesName.includes('100B') || seriesName.includes('The Hundred')) {
+      return 'England';
+    }
+
+    return null;
+  }
+
+  // ============================================================
+  // GET LOCATION FROM URL
+  // ============================================================
+  getLocationFromUrl(url) {
+    if (!url) return null;
+
+    const urlParts = url.split('/');
+    for (const part of urlParts) {
+      const decoded = decodeURIComponent(part).replace(/-/g, ' ');
+
+      for (const [tournament, location] of Object.entries(this.tournamentLocationMap)) {
+        if (decoded.includes(tournament.toLowerCase()) || decoded.includes(tournament)) {
+          return location;
+        }
+      }
+
+      for (const [country] of Object.entries(this.countryMap)) {
+        if (decoded.includes(country.toLowerCase()) || decoded.includes(country)) {
+          return country;
+        }
+      }
+
+      for (const [city, country] of Object.entries(this.cityCountryMap)) {
+        if (decoded.includes(city.toLowerCase()) || decoded.includes(city)) {
+          return country;
+        }
+      }
+    }
+
     return null;
   }
 
@@ -201,118 +345,78 @@ class LiveScraper extends BaseCrexScraper {
   // ============================================================
   buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
     const candidates = new Set();
-    
+
     if (venue && venue !== 'TBD' && venue.length > 2) {
       candidates.add(venue);
-      
       const cleanedVenue = venue
-        .replace(/Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi, '')
+        .replace(
+          /Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi,
+          ''
+        )
         .replace(/\s+/g, ' ')
         .trim();
       if (cleanedVenue !== venue && cleanedVenue.length > 2) {
         candidates.add(cleanedVenue);
       }
-      
       if (venue.includes(',')) {
-        const parts = venue.split(',').map(p => p.trim());
-        parts.forEach(part => {
-          if (part.length > 2) {
-            candidates.add(part);
-          }
+        const parts = venue.split(',').map((p) => p.trim());
+        parts.forEach((part) => {
+          if (part.length > 2) candidates.add(part);
         });
       }
-      
       const cityMatch = venue.match(/,?\s*([A-Za-z\s]+)$/);
       if (cityMatch && cityMatch[1] && cityMatch[1].length > 2) {
         candidates.add(cityMatch[1].trim());
       }
     }
-    
-    if (matchUrl) {
-      const urlParts = matchUrl.split('/');
-      for (const part of urlParts) {
-        const decoded = decodeURIComponent(part).replace(/-/g, ' ');
-        for (const [country] of Object.entries(this.countryMap)) {
-          if (decoded.includes(country.toLowerCase()) || decoded.includes(country)) {
-            candidates.add(country);
-          }
-        }
-        const locationMatch = decoded.match(/(england|australia|india|pakistan|sri lanka|west indies|new zealand|south africa|bangladesh|afghanistan|zimbabwe|ireland|nepal|namibia|guyana)/i);
-        if (locationMatch) {
-          candidates.add(locationMatch[1]);
-        }
-      }
-    }
-    
+
     if (series) {
-      for (const [country] of Object.entries(this.countryMap)) {
-        if (series.includes(country)) {
-          candidates.add(country);
-        }
-      }
-      
-      const countryPatterns = [
-        /(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)\s+(?:Tour|vs|in)/i,
-        /(?:Tour|vs|in)\s+(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)/i
-      ];
-      
-      for (const pattern of countryPatterns) {
-        const match = series.match(pattern);
-        if (match) {
-          const country = match[0].replace(/Tour|vs|in/gi, '').trim();
-          if (country && country.length > 2) {
+      const seriesLocation = this.getLocationFromSeries(series);
+      if (seriesLocation) {
+        candidates.add(seriesLocation);
+        for (const [city, country] of Object.entries(this.cityCountryMap)) {
+          if (seriesLocation.includes(city) || city.includes(seriesLocation)) {
             candidates.add(country);
           }
         }
       }
-      
-      const vsMatch = series.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
-      if (vsMatch) {
-        const country1 = vsMatch[1].trim();
-        const country2 = vsMatch[2].trim();
-        if (country1 && country1.length > 2) candidates.add(country1);
-        if (country2 && country2.length > 2) candidates.add(country2);
-      }
     }
-    
+
     if (matchTitle) {
       for (const [country] of Object.entries(this.countryMap)) {
         if (matchTitle.includes(country)) {
           candidates.add(country);
         }
       }
+      for (const [city, country] of Object.entries(this.cityCountryMap)) {
+        if (matchTitle.includes(city)) {
+          candidates.add(city);
+          candidates.add(country);
+        }
+      }
+      for (const [tournament, location] of Object.entries(this.tournamentLocationMap)) {
+        if (matchTitle.includes(tournament)) {
+          candidates.add(location);
+        }
+      }
     }
-    
+
     if (team1Name) {
-      for (const [key, country] of Object.entries(this.countryMap)) {
-        if (team1Name.includes(key) || key.includes(team1Name)) {
-          candidates.add(country);
-        }
-      }
-      const teamCountry = this.getCountryFromTeamName(team1Name);
-      if (teamCountry) candidates.add(teamCountry);
+      const country = this.getCountryFromTeamName(team1Name);
+      if (country) candidates.add(country);
     }
-    
     if (team2Name) {
-      for (const [key, country] of Object.entries(this.countryMap)) {
-        if (team2Name.includes(key) || key.includes(team2Name)) {
-          candidates.add(country);
-        }
-      }
-      const teamCountry = this.getCountryFromTeamName(team2Name);
-      if (teamCountry) candidates.add(teamCountry);
-    }
-    
-    if (team1Name && team1Name.length <= 3) {
-      const country = this.teamCountryMap[team1Name.toUpperCase()];
+      const country = this.getCountryFromTeamName(team2Name);
       if (country) candidates.add(country);
     }
-    
-    if (team2Name && team2Name.length <= 3) {
-      const country = this.teamCountryMap[team2Name.toUpperCase()];
-      if (country) candidates.add(country);
+
+    const urlLocation = this.getLocationFromUrl(matchUrl);
+    if (urlLocation) {
+      candidates.add(urlLocation);
     }
-    
+
+    candidates.add('England');
+
     const validCandidates = new Set();
     for (const candidate of candidates) {
       const trimmed = candidate.trim();
@@ -320,60 +424,52 @@ class LiveScraper extends BaseCrexScraper {
         validCandidates.add(trimmed);
       }
     }
-    
+
     const prioritized = [];
-    const venueCandidates = [];
-    const cityCandidates = [];
-    const seriesCandidates = [];
+    const englandCandidates = [];
     const countryCandidates = [];
-    
+    const cityCandidates = [];
+    const otherCandidates = [];
+
     for (const candidate of validCandidates) {
-      const isCountry = Object.values(this.countryMap).some(c => 
-        candidate.toLowerCase() === c.toLowerCase() || 
-        candidate.includes(c)
-      );
-      
-      if (isCountry && candidate.length <= 20) {
+      if (
+        candidate.toLowerCase() === 'england' ||
+        candidate.toLowerCase() === 'uk' ||
+        candidate.toLowerCase() === 'united kingdom'
+      ) {
+        englandCandidates.push(candidate);
+      } else if (
+        Object.values(this.countryMap).some(
+          (c) => candidate.toLowerCase() === c.toLowerCase() || candidate.includes(c)
+        )
+      ) {
         countryCandidates.push(candidate);
-      } else if (candidate.includes(',')) {
-        venueCandidates.push(candidate);
-      } else if (candidate.match(/[A-Z][a-z]+\s+[A-Z][a-z]+/)) {
-        venueCandidates.push(candidate);
-      } else if (candidate.match(/[A-Z][a-z]+/)) {
+      } else if (
+        Object.keys(this.cityCountryMap).some(
+          (c) => candidate.toLowerCase() === c.toLowerCase() || candidate.includes(c)
+        )
+      ) {
         cityCandidates.push(candidate);
       } else {
-        seriesCandidates.push(candidate);
+        otherCandidates.push(candidate);
       }
     }
-    
-    const allCandidates = [
-      ...venueCandidates,
-      ...cityCandidates,
-      ...seriesCandidates,
-      ...countryCandidates
-    ];
-    
+
+    prioritized.push(...englandCandidates);
+    prioritized.push(...countryCandidates);
+    prioritized.push(...cityCandidates);
+    prioritized.push(...otherCandidates);
+
     const seen = new Set();
     const uniqueCandidates = [];
-    for (const candidate of allCandidates) {
+    for (const candidate of prioritized) {
       const lower = candidate.toLowerCase();
       if (!seen.has(lower)) {
         seen.add(lower);
         uniqueCandidates.push(candidate);
       }
     }
-    
-    if (uniqueCandidates.length === 0) {
-      if (team1Name) {
-        const country = this.getCountryFromTeamName(team1Name);
-        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
-      }
-      if (team2Name) {
-        const country = this.getCountryFromTeamName(team2Name);
-        if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
-      }
-    }
-    
+
     return uniqueCandidates;
   }
 
@@ -382,36 +478,31 @@ class LiveScraper extends BaseCrexScraper {
   // ============================================================
   async getCoordinates(location) {
     const cacheKey = location.toLowerCase().trim();
-    
+
     if (this.geoCache.has(cacheKey)) {
-      logger.debug(`    ✅ Coordinates from cache for: ${location}`);
       return this.geoCache.get(cacheKey);
     }
 
     try {
       const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-      
+
       const response = await axios.get(geocodeUrl, {
-        timeout: 10000
+        timeout: 8000,
       });
-      
+
       if (response.data.results && response.data.results.length > 0) {
         const result = response.data.results[0];
         const coords = {
           lat: result.latitude,
           lon: result.longitude,
           name: result.name,
-          country: result.country
+          country: result.country,
         };
         this.geoCache.set(cacheKey, coords);
-        logger.debug(`    ✅ Geocoded "${location}" → ${result.name}, ${result.country}`);
         return coords;
-      } else {
-        logger.debug(`    ⚠️ No results for location: "${location}"`);
-        return null;
       }
+      return null;
     } catch (error) {
-      logger.debug(`    ⚠️ Geocoding failed for "${location}": ${error.message}`);
       return null;
     }
   }
@@ -420,54 +511,47 @@ class LiveScraper extends BaseCrexScraper {
   // GET WEATHER FOR VENUE
   // ============================================================
   async getWeatherForVenue(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
-    const candidates = this.buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl);
-    
+    const candidates = this.buildLocationCandidates(
+      venue,
+      series,
+      matchTitle,
+      team1Name,
+      team2Name,
+      matchUrl
+    );
+
     if (candidates.length === 0) {
-      logger.warn(`    ❌ No location candidates found for weather`);
       return null;
     }
 
-    logger.info(`    🌤️ Weather requested with ${candidates.length} location candidates:`);
-    candidates.slice(0, 10).forEach((c, i) => {
-      logger.info(`       ${i + 1}. "${c}"`);
-    });
-    if (candidates.length > 10) {
-      logger.info(`       ... and ${candidates.length - 10} more`);
-    }
-
-    for (let i = 0; i < candidates.length; i++) {
+    for (let i = 0; i < Math.min(candidates.length, 5); i++) {
       const location = candidates[i];
-      logger.debug(`    🔍 Trying location ${i + 1}/${candidates.length}: "${location}"`);
-      
+
       try {
         const coords = await this.getCoordinates(location);
-        
-        if (!coords) {
-          logger.debug(`    ⚠️ No coordinates for "${location}", trying next`);
-          continue;
-        }
+        if (!coords) continue;
 
         const { lat: latitude, lon: longitude } = coords;
-
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=auto`;
-        
-        const weatherResponse = await axios.get(weatherUrl, {
-          timeout: 10000
-        });
 
+        const weatherResponse = await axios.get(weatherUrl, { timeout: 8000 });
         const data = weatherResponse.data;
-        
-        if (!data.current) {
-          logger.debug(`    ⚠️ No weather data for "${location}", trying next`);
-          continue;
-        }
+
+        if (!data.current) continue;
 
         const current = data.current;
         const weatherCode = current.weather_code;
-        const weatherInfo = this.weatherCodeMap[weatherCode] || { condition: 'Unknown', icon: '01d' };
-        
+        const weatherInfo = this.weatherCodeMap[weatherCode] || {
+          condition: 'Unknown',
+          icon: '01d',
+        };
+
         let rainProbability = null;
-        if (data.daily && data.daily.precipitation_probability_max && data.daily.precipitation_probability_max.length > 0) {
+        if (
+          data.daily &&
+          data.daily.precipitation_probability_max &&
+          data.daily.precipitation_probability_max.length > 0
+        ) {
           rainProbability = data.daily.precipitation_probability_max[0];
         }
 
@@ -479,88 +563,137 @@ class LiveScraper extends BaseCrexScraper {
           condition: weatherInfo.condition,
           rain_probability: rainProbability,
           weather_icon: weatherInfo.icon,
-          last_updated: new Date().toISOString()
+          last_updated: new Date().toISOString(),
         };
 
         this.stats.weatherSuccess++;
-        
-        logger.info(`    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`);
-        logger.info(`       (Original venue: "${venue || 'N/A'}", Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'})`);
         return weather;
-
       } catch (error) {
-        logger.debug(`    ❌ Weather API error for "${location}": ${error.message}`);
         continue;
       }
     }
 
     this.stats.weatherFailed++;
-    logger.warn(`    ❌ No valid weather location found after all ${candidates.length} retries.`);
-    logger.warn(`       Venue: "${venue || 'N/A'}"`);
-    logger.warn(`       Series: "${series || 'N/A'}"`);
-    logger.warn(`       Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'}`);
     return null;
   }
 
   // ============================================================
-  // SLEEP WITH RATE LIMITING
+  // SLEEP
   // ============================================================
   async sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ============================================================
-  // OVERRIDE: INITIALIZE BROWSER WITH MANAGER
+  // GET RANDOM USER AGENT
+  // ============================================================
+  getRandomUserAgent() {
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    ];
+    return userAgents[Math.floor(Math.random() * userAgents.length)];
+  }
+
+  // ============================================================
+  // INITIALIZE BROWSER
   // ============================================================
   async initializeBrowser() {
     try {
       if (this.isBrowserInitialized && this.browser && this.browser.isConnected()) {
-        logger.debug('Browser already initialized, reusing...');
         return true;
       }
 
-      // Use the shared browser manager
-      logger.info('🔄 Using shared browser manager...');
+      if (this.browserManager.browser && this.browserManager.browser.isConnected()) {
+        this.browser = this.browserManager.browser;
+        this.context = this.browserManager.context;
+        
+        if (this.context) {
+          this.page = await this.context.newPage();
+          this.page.setDefaultTimeout(60000);
+          this.page.setDefaultNavigationTimeout(60000);
+          
+          const userAgent = this.getRandomUserAgent();
+          await this.page.setExtraHTTPHeaders({
+            'User-Agent': userAgent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': 'https://crex.com/'
+          });
+        }
+        
+        this.isBrowserInitialized = true;
+        logger.info('✅ Browser initialized (using existing)');
+        return true;
+      }
+
       await this.browserManager.launch();
-      
-      // Get the browser and context from the manager
       this.browser = this.browserManager.browser;
       this.context = this.browserManager.context;
-      
-      // Create a new page for this scraper instance
+
       if (this.context) {
         this.page = await this.context.newPage();
-        this.page.setDefaultTimeout(45000);
-        this.page.setDefaultNavigationTimeout(45000);
+        this.page.setDefaultTimeout(60000);
+        this.page.setDefaultNavigationTimeout(60000);
+        
+        const userAgent = this.getRandomUserAgent();
+        await this.page.setExtraHTTPHeaders({
+          'User-Agent': userAgent,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Referer': 'https://crex.com/'
+        });
       }
-      
+
       this.isBrowserInitialized = true;
-      logger.info('✅ Browser initialized via shared manager');
+      logger.info('✅ Browser initialized (new)');
       return true;
-      
     } catch (error) {
       logger.error(`Failed to initialize browser: ${error.message}`);
-      // Fallback to creating our own browser
-      logger.info('⚠️ Falling back to standalone browser...');
-      return await super.initializeBrowser();
+      this.isBrowserInitialized = false;
+      return false;
     }
   }
 
   // ============================================================
-  // OVERRIDE: CLOSE BROWSER
+  // CLOSE BROWSER
   // ============================================================
   async closeBrowser() {
     try {
-      // Only close our page, not the shared browser
       if (this.page && !this.page.isClosed()) {
         await this.page.close();
         this.page = null;
       }
       this.isBrowserInitialized = false;
-      logger.info('✅ LiveScraper page closed');
       return true;
     } catch (error) {
-      logger.error(`Error closing page: ${error.message}`);
       this.page = null;
       this.isBrowserInitialized = false;
       return false;
@@ -568,634 +701,1101 @@ class LiveScraper extends BaseCrexScraper {
   }
 
   // ============================================================
-  // OVERRIDE: NAVIGATE WITH RETRY AND RATE LIMITING
+  // NAVIGATE WITH RETRY
   // ============================================================
   async navigateWithRetry(url, options = {}) {
     const maxRetries = options.maxRetries || this.maxRetries;
-    const delay = options.delay || this.requestDelay;
-    
-    // Ensure browser is initialized
+
     if (!this.isBrowserInitialized || !this.page) {
-      await this.initializeBrowser();
+      const initialized = await this.initializeBrowser();
+      if (!initialized) {
+        throw new Error('Failed to initialize browser');
+      }
     }
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Rate limiting
         const now = Date.now();
         const timeSinceLastRequest = now - this.lastRequestTime;
         if (timeSinceLastRequest < 2000) {
-          const waitTime = 2000 - timeSinceLastRequest + Math.random() * 1000;
-          logger.debug(`Rate limiting: waiting ${waitTime}ms`);
-          await this.sleep(waitTime);
+          await this.sleep(2000 - timeSinceLastRequest + Math.random() * 1000);
         }
-        
+
         this.lastRequestTime = Date.now();
         this.requestCount++;
-        
-        if (attempt > 1) {
-          logger.info(`   ⏳ Rate limiting: waiting ${delay * attempt}ms before retry ${attempt}/${maxRetries}`);
-          await this.sleep(delay * attempt);
-        }
-        
-        // Random referrer
-        const referrers = [
-          'https://www.google.com/',
-          'https://www.bing.com/',
-          'https://www.yahoo.com/',
-          'https://duckduckgo.com/'
-        ];
-        
+
+        logger.info(`🔄 Navigation attempt ${attempt}/${maxRetries}: ${url}`);
+
+        const userAgent = this.getRandomUserAgent();
         await this.page.setExtraHTTPHeaders({
-          'Referer': referrers[Math.floor(Math.random() * referrers.length)]
+          'User-Agent': userAgent,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Referer': 'https://crex.com/'
         });
-        
-        // Rotate user agent if using browser manager
-        if (this.useBrowserManager && this.browserManager) {
-          const newUA = this.browserManager.getRandomUserAgent();
-          await this.context.setExtraHTTPHeaders({
-            'User-Agent': newUA
-          });
-        }
-        
+
         const response = await this.page.goto(url, {
-          waitUntil: options.waitUntil || 'domcontentloaded',
-          timeout: options.timeout || 30000
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
         });
-        
+
         if (response && response.status() === 403) {
-          logger.warn(`   ⚠️ Received 403 Forbidden, attempt ${attempt}/${maxRetries}`);
-          
-          // Rotate user agent on 403
-          if (this.useBrowserManager && this.browserManager) {
-            const newUA = this.browserManager.getRandomUserAgent();
-            await this.context.setExtraHTTPHeaders({
-              'User-Agent': newUA
-            });
-            logger.info(`   🔄 Rotated User-Agent: ${newUA}`);
-          }
-          
-          // Try rotating proxy if available
-          if (this.browserManager && this.browserManager.getNextProxy) {
-            const proxy = this.browserManager.getNextProxy();
-            if (proxy) {
-              logger.info(`   🔄 Rotating to proxy: ${proxy}`);
-              await this.closeBrowser();
-              await this.initializeBrowser();
-            }
-          }
-          
-          // Wait longer before retry on 403
-          const waitTime = (delay * attempt * 2) + Math.random() * 2000;
-          logger.info(`   ⏳ Waiting ${waitTime}ms before retry...`);
-          await this.sleep(waitTime);
-          
+          logger.warn(`⚠️ 403 Forbidden on attempt ${attempt}`);
           if (attempt === maxRetries) {
-            throw new Error(`Failed after ${maxRetries} attempts: 403 Forbidden`);
+            throw new Error('403 Forbidden');
           }
+          await this.sleep(5000 * attempt);
           continue;
         }
-        
+
         if (response && response.status() >= 400) {
-          logger.warn(`   ⚠️ Received status ${response.status()}, attempt ${attempt}/${maxRetries}`);
+          logger.warn(`⚠️ Status ${response.status()} on attempt ${attempt}`);
           if (attempt === maxRetries) {
-            throw new Error(`Failed after ${maxRetries} attempts: status ${response.status()}`);
+            throw new Error(`Status ${response.status()}`);
           }
-          await this.sleep(delay * attempt);
+          await this.sleep(3000 * attempt);
           continue;
         }
-        
-        // Wait for page to be interactive
+
         await this.page.waitForLoadState('domcontentloaded');
-        await this.sleep(1000);
+        await this.sleep(2000 + Math.random() * 2000);
         
-        // Check for consent
-        try {
-          const bodyText = await this.page.textContent('body');
-          if (bodyText && (bodyText.includes('cookie') || bodyText.includes('Consent') || bodyText.includes('GDPR'))) {
-            await this.acceptConsent();
-          }
-        } catch (e) {
-          // Ignore consent errors
-        }
-        
+        logger.info(`✅ Navigation successful on attempt ${attempt}`);
         return response;
-        
       } catch (error) {
-        logger.warn(`   ⚠️ Navigation attempt ${attempt}/${maxRetries} failed: ${error.message}`);
-        
-        // If browser issue, restart
-        if (error.message.includes('browser') || 
-            error.message.includes('disconnected') ||
-            error.message.includes('closed')) {
-          await this.closeBrowser();
-          await this.initializeBrowser();
-        }
-        
+        logger.warn(`❌ Navigation attempt ${attempt} failed: ${error.message}`);
         if (attempt === maxRetries) {
           throw error;
         }
-        await this.sleep(delay * attempt + Math.random() * 2000);
+        if (attempt === 2) {
+          logger.info('🔄 Reinitializing browser...');
+          await this.closeBrowser();
+          await this.initializeBrowser();
+        }
+        await this.sleep(3000 * attempt);
       }
     }
-    
+
     throw new Error(`Failed to navigate after ${maxRetries} attempts`);
   }
 
   // ============================================================
-  // ACCEPT CONSENT
+  // START REAL-TIME POLLING
   // ============================================================
-  async acceptConsent() {
-    try {
-      const selectors = [
-        '#onetrust-accept-btn-handler',
-        '#onetrust-close-btn-container button',
-        '.onetrust-close-btn-handler',
-        '#accept-recommended-btn-handler',
-        '.btn-primary',
-        '.cookie-accept',
-        '.accept-cookies',
-        'button:contains("Accept")',
-        'button:contains("Accept All")',
-      ];
-      
-      for (const selector of selectors) {
-        try {
-          const element = await this.page.$(selector);
-          if (element && await element.isVisible()) {
-            await element.click();
-            logger.info('✅ Accepted consent');
-            await this.sleep(1000);
-            return true;
-          }
-        } catch (e) {
-          // Continue
-        }
-      }
-      
-      // Try JavaScript click
-      await this.page.evaluate(() => {
-        const buttons = document.querySelectorAll('button, [role="button"]');
-        for (const btn of buttons) {
-          const text = (btn.textContent || '').toLowerCase();
-          if (text.includes('accept') || text.includes('allow') || text.includes('agree')) {
-            btn.click();
-            return true;
-          }
-        }
-        return false;
-      });
-      
-      return false;
-    } catch (error) {
-      logger.warn('Consent acceptance failed:', error.message);
+  async startRealTimeUpdates(options = {}) {
+    const {
+      onUpdate,
+      onComplete,
+      onNewMatch,
+      interval = 5000,
+    } = options;
+
+    if (this.isPolling) {
+      logger.warn('⚠️ Real-time polling already running');
       return false;
     }
+
+    logger.info(`🔄 Starting real-time updates every ${interval}ms`);
+
+    this.onMatchUpdate = onUpdate || null;
+    this.onMatchComplete = onComplete || null;
+    this.onNewMatch = onNewMatch || null;
+    this.updateInterval = interval;
+    this.isPolling = true;
+
+    const initialResult = await this.scrapeLive(true);
+    if (initialResult.success && initialResult.data.length > 0) {
+      initialResult.data.forEach(match => {
+        const matchId = match.match_id;
+        this.activeMatches.set(matchId, {
+          data: match,
+          lastUpdate: Date.now(),
+          isComplete: false
+        });
+      });
+
+      if (this.onNewMatch) {
+        initialResult.data.forEach(match => {
+          this.onNewMatch(match);
+        });
+      }
+    }
+
+    this.pollingInterval = setInterval(async () => {
+      try {
+        await this.pollLiveMatches();
+      } catch (error) {
+        logger.error(`❌ Polling error: ${error.message}`);
+      }
+    }, this.updateInterval);
+
+    logger.info(`✅ Real-time updates started`);
+    return true;
   }
 
   // ============================================================
-  // CLEANUP
+  // STOP REAL-TIME POLLING
   // ============================================================
-  async cleanup() {
+  stopRealTimeUpdates() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    this.isPolling = false;
+    logger.info('⏹️ Real-time updates stopped');
+    return true;
+  }
+
+  // ============================================================
+  // POLL LIVE MATCHES
+  // ============================================================
+  async pollLiveMatches() {
+    logger.debug('🔄 Polling live matches for updates...');
+
     try {
-      if (this.page && !this.page.isClosed()) {
-        await this.page.close();
+      const result = await this.scrapeLive(true);
+      
+      if (!result.success || result.data.length === 0) {
+        for (const [matchId, matchData] of this.activeMatches) {
+          if (!matchData.isComplete) {
+            matchData.isComplete = true;
+            if (this.onMatchComplete) {
+              this.onMatchComplete(matchData.data);
+            }
+          }
+        }
+        return;
       }
-      this.page = null;
-      this.isBrowserInitialized = false;
-      logger.info('✅ LiveScraper cleaned up');
-      return true;
+
+      const currentMatchIds = new Set();
+      
+      for (const match of result.data) {
+        const matchId = match.match_id;
+        currentMatchIds.add(matchId);
+
+        if (this.activeMatches.has(matchId)) {
+          const existing = this.activeMatches.get(matchId);
+          
+          const oldScore = existing.data.scoreboard?.batting_team?.score || '';
+          const newScore = match.scoreboard?.batting_team?.score || '';
+          const oldWickets = existing.data.scoreboard?.batting_team?.wickets || '';
+          const newWickets = match.scoreboard?.batting_team?.wickets || '';
+
+          const isComplete = match.match?.status?.toLowerCase().includes('complete') || 
+                             match.match?.status?.toLowerCase().includes('finished');
+
+          if (isComplete && !existing.isComplete) {
+            existing.isComplete = true;
+            if (this.onMatchComplete) {
+              this.onMatchComplete(match);
+            }
+          }
+
+          if (oldScore !== newScore || oldWickets !== newWickets) {
+            logger.info(`📊 Match ${matchId} updated: ${newScore}/${newWickets}`);
+            
+            existing.data = match;
+            existing.lastUpdate = Date.now();
+            
+            if (this.onMatchUpdate) {
+              this.onMatchUpdate(match, {
+                previousScore: oldScore,
+                newScore: newScore,
+                previousWickets: oldWickets,
+                newWickets: newWickets
+              });
+            }
+          }
+        } else {
+          logger.info(`🆕 New match detected: ${match.teams.home.name} vs ${match.teams.away.name}`);
+          
+          this.activeMatches.set(matchId, {
+            data: match,
+            lastUpdate: Date.now(),
+            isComplete: false
+          });
+          
+          if (this.onNewMatch) {
+            this.onNewMatch(match);
+          }
+        }
+      }
+
+      for (const [matchId, matchData] of this.activeMatches) {
+        if (!currentMatchIds.has(matchId) && !matchData.isComplete) {
+          matchData.isComplete = true;
+          if (this.onMatchComplete) {
+            this.onMatchComplete(matchData.data);
+          }
+        }
+      }
+
     } catch (error) {
-      logger.warn('Error cleaning up LiveScraper:', error.message);
-      return false;
+      logger.error(`❌ Polling error: ${error.message}`);
     }
   }
 
   // ============================================================
   // MAIN SCRAPE METHOD
   // ============================================================
-  async scrapeLive() {
-    logger.info('🚀 Starting live matches scraper');
+  async scrapeLive(forceRefresh = true) {
+    // Check for stale lock
+    if (this.isScraping && this.scrapeStartTime) {
+      const elapsed = Date.now() - this.scrapeStartTime;
+      if (elapsed > this.scrapeLockTimeout) {
+        logger.warn(`⚠️ Stale scrape lock detected (${elapsed}ms), releasing...`);
+        this.isScraping = false;
+        this.scrapeStartTime = null;
+      }
+    }
+
+    if (this.isScraping) {
+      logger.warn('⚠️ Scrape already in progress');
+      return {
+        success: false,
+        timestamp: new Date().toISOString(),
+        data: [],
+        total: 0,
+        message: 'Scrape already in progress',
+      };
+    }
+
+    // Acquire lock
+    this.isScraping = true;
+    this.scrapeStartTime = Date.now();
+    this.processedUrls.clear();
+    this.agentResults = [];
+    this.agentStats = {};
+
+    if (forceRefresh) {
+      this.cacheBuster = Date.now();
+      logger.info('🔄 Force refresh enabled - bypassing cache');
+    }
+
+    logger.info('🚀 Starting live matches scraper with Agent-based architecture');
+    logger.info(`📋 Agents: ${this.numberOfAgents}, Stagger Delay: ${this.agentStaggerDelay}ms`);
 
     try {
-      // Initialize browser once
       await this.initializeBrowser();
-      
-      // Phase 1: Discover matches
-      const discoveredMatches = await this.discoverLiveMatches();
+
+      const discoveredMatches = await this.discoverLiveMatches(forceRefresh);
       this.stats.discovered = discoveredMatches.length;
-      
+
       if (discoveredMatches.length === 0) {
         logger.info('📢 No live matches currently in progress');
         await this.closeBrowser();
-        const result = {
-          success: false,
+        this.isScraping = false;
+        this.scrapeStartTime = null;
+        return {
+          success: true,
           timestamp: new Date().toISOString(),
-          data: []
+          data: [],
+          total: 0,
+          message: 'No live matches currently in progress',
         };
-        deepLog('SCRAPER RESULT - No live matches found', result);
-        return result;
       }
 
       logger.info(`📋 Phase 1 complete: Discovered ${discoveredMatches.length} live matches`);
-      deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
 
-      // Phase 2: Extract details with rate limiting
-      const fullMatches = [];
-      for (let i = 0; i < discoveredMatches.length; i++) {
-        const match = discoveredMatches[i];
-        
-        // Rate limiting between matches
-        if (i > 0) {
-          logger.info(`   ⏳ Waiting ${this.requestDelay}ms before next match...`);
-          await this.sleep(this.requestDelay);
-        }
-        
-        try {
-          logger.info(`  📄 Processing match ${i + 1}/${discoveredMatches.length}: ${match.url}`);
-          
-          // Navigate with retry
-          await this.navigateWithRetry(match.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000,
-            maxRetries: this.maxRetries,
-            delay: this.requestDelay
-          });
-          
-          await this.sleep(2000);
-          
-          // Extract data
-          const matchData = await this.extractMatchDetails(match);
-          if (matchData) {
-            fullMatches.push(matchData);
-            this.stats.detailed++;
-            
-            logger.info(`    ✅ Extracted: ${matchData.teams.home.name} vs ${matchData.teams.away.name}`);
-            logger.info(`       Score: ${matchData.scoreboard.batting_team.score || 'N/A'}`);
-            logger.info(`       Overs: ${matchData.scoreboard.batting_team.overs || 'N/A'}`);
-          }
-        } catch (error) {
-          logger.error(`    ❌ Error processing match ${i + 1}: ${error.message}`);
-          this.stats.errors++;
-          
-          // Create fallback match
-          const fallbackMatch = this.createFallbackMatch(match);
-          fullMatches.push(fallbackMatch);
-          deepLog(`PHASE 2 - Match ${i + 1} FALLBACK Data`, fallbackMatch);
-        }
-      }
+      const fullMatches = await this.processWithAgents(discoveredMatches);
+      this.stats.detailed = fullMatches.length;
 
       logger.info(`📋 Phase 2 complete: Extracted details for ${fullMatches.length} live matches`);
 
-      // Close browser after all extraction is done
       await this.closeBrowser();
       this.logStatistics();
 
       const result = {
         success: true,
         timestamp: new Date().toISOString(),
-        data: fullMatches
+        data: fullMatches,
+        total: fullMatches.length,
+        cacheBuster: this.cacheBuster,
+        duration: Date.now() - this.scrapeStartTime,
       };
 
-      deepLog('✅ FINAL SCRAPER RESULT - Complete JSON', result);
-      
       if (fullMatches.length > 0) {
-        deepLog('📋 SAMPLE LIVE MATCH - First match in detail', fullMatches[0]);
+        deepLog('📋 SAMPLE LIVE MATCH - Real-time data', fullMatches[0]);
       }
 
+      this.isScraping = false;
+      this.scrapeStartTime = null;
       return result;
-
     } catch (error) {
       logger.error(`❌ LiveScraper error: ${error.message}`);
+      logger.error(error.stack);
       await this.closeBrowser();
-      const result = {
+      this.isScraping = false;
+      this.scrapeStartTime = null;
+      return {
         success: false,
         timestamp: new Date().toISOString(),
-        data: []
+        data: [],
+        total: 0,
+        error: error.message,
       };
-      deepLog('❌ SCRAPER ERROR RESULT', result);
-      return result;
     }
   }
 
   // ============================================================
   // DISCOVER LIVE MATCHES
   // ============================================================
-  async discoverLiveMatches() {
+  async discoverLiveMatches(forceRefresh = true) {
     logger.info('🔍 Phase 1: Discovering live matches...');
 
-    const url = this.selectors.PAGE_URL || 'https://crex.com/cricket-live-score';
-    
+    const url = forceRefresh 
+      ? `https://crex.com/cricket-live-score?_=${this.cacheBuster}`
+      : 'https://crex.com/cricket-live-score';
+
+    logger.info(`📡 Fetching fresh data from: ${url}`);
+
     try {
       await this.navigateWithRetry(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
+        maxRetries: this.maxRetries,
       });
 
-      try {
-        await this.page.waitForSelector('.live-card, .live-score-card, .match-card, .team-innig', { 
-          timeout: 10000 
+      if (!this.page) {
+        logger.warn('⚠️ Page is null, reinitializing...');
+        await this.initializeBrowser();
+        await this.navigateWithRetry(url, {
+          maxRetries: this.maxRetries,
         });
+      }
+
+      try {
+        await this.page.waitForSelector('.team-innig, .live-score-card, .match-card', { timeout: 10000 });
         logger.info('✅ Found live match indicators on page');
       } catch (e) {
         logger.warn('⚠️ No live match indicators found, waiting for page to settle...');
         await this.sleep(3000);
       }
 
-      await this.sleep(3000);
+      const matches = await this.extractLiveMatchesFromPage();
+
+      logger.info(`✅ Discovered ${matches.length} live matches`);
       
-      const debugDir = path.join(process.cwd(), 'debug');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
+      if (matches.length > 0) {
+        matches.forEach((match, index) => {
+          logger.info(`  ${index + 1}. ${match.team1.name} vs ${match.team2.name} - ${match.team1.score}/${match.team1.wickets} vs ${match.team2.score}/${match.team2.wickets}`);
+        });
       }
-      
-      try {
-        await this.page.screenshot({ path: path.join(debugDir, 'live-page-screenshot.png'), fullPage: true });
-        logger.info(`💾 Saved screenshot to debug/live-page-screenshot.png`);
-      } catch (e) {
-        logger.warn(`Could not save screenshot: ${e.message}`);
-      }
+
+      return matches;
 
     } catch (error) {
-      logger.error(`❌ Failed to load live matches page: ${error.message}`);
+      logger.error(`❌ Failed to discover live matches: ${error.message}`);
+      return [];
+    }
+  }
+
+  // ============================================================
+  // EXTRACT LIVE MATCHES FROM PAGE
+  // ============================================================
+  async extractLiveMatchesFromPage() {
+    if (!this.page) {
+      logger.warn('⚠️ Page is null in extractLiveMatchesFromPage');
       return [];
     }
 
-    try {
-      const pageHtml = await this.page.content();
-      const debugDir = path.join(process.cwd(), 'debug');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(debugDir, 'live-page.html'), pageHtml);
-      logger.info(`💾 Saved page HTML to debug/live-page.html for inspection`);
-    } catch (e) {
-      logger.warn(`Could not save HTML: ${e.message}`);
-    }
-
-    const selectors = [
-      '.live-card',
-      '.live-score-card',
-      '.match-card',
-      '.match-container',
-      '.team-result',
-      '.team-content',
-      '.teamProfile',
-      '.team-innig',
-      '.score-card',
-      '.match-item',
-      '.live-match-item',
-      '.match-row',
-      '.cricket-match-card',
-      '.match-card-container'
-    ];
-
-    let foundCards = [];
-
-    for (const selector of selectors) {
-      try {
-        const count = await this.page.locator(selector).count();
-        logger.info(`  🔍 Checking selector "${selector}": ${count} elements found`);
-        
-        if (count > 0) {
-          foundCards = await this.page.$$(selector);
-          logger.info(`✅ Found ${count} elements with selector: ${selector}`);
-          
-          if (foundCards.length > 0) {
-            try {
-              const firstCardHtml = await this.page.evaluate((el) => el.outerHTML, foundCards[0]);
-              const snippet = firstCardHtml.substring(0, 500) + '...';
-              logger.info(`📄 First card HTML snippet: ${snippet}`);
-              
-              const debugDir = path.join(process.cwd(), 'debug');
-              if (!fs.existsSync(debugDir)) {
-                fs.mkdirSync(debugDir, { recursive: true });
-              }
-              fs.writeFileSync(path.join(debugDir, 'first-card.html'), firstCardHtml);
-              logger.info(`💾 Saved first card HTML to debug/first-card.html`);
-            } catch (e) {
-              logger.warn(`Could not save first card HTML: ${e.message}`);
-            }
-          }
-          break;
-        }
-      } catch (error) {
-        logger.debug(`  ⚠️ Error with selector "${selector}": ${error.message}`);
-      }
-    }
-
-    if (foundCards.length === 0) {
-      logger.warn('❌ No live match cards found with any selector');
-      return [];
-    }
-
-    const discoveredMatches = await this.page.evaluate((cards) => {
-      const matches = [];
-      
-      const getText = (el) => {
-        if (!el) return '';
-        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
-      };
+    const matches = await this.page.evaluate(() => {
+      const results = [];
+      const seenUrls = new Set();
 
       const cleanText = (text) => {
         if (!text) return '';
         return text.replace(/\s+/g, ' ').trim();
       };
 
-      const getTeamShortName = (name) => {
-        const map = {
-          'India': 'IND',
-          'England': 'ENG',
-          'Australia': 'AUS',
-          'Pakistan': 'PAK',
-          'New Zealand': 'NZ',
-          'South Africa': 'SA',
-          'West Indies': 'WI',
-          'Sri Lanka': 'SL',
-          'Bangladesh': 'BAN',
-          'Afghanistan': 'AFG',
-          'Zimbabwe': 'ZIM',
-          'Ireland': 'IRE',
-          'Nepal': 'NEP',
-          'Namibia': 'NAM',
-          'Galle Gallants': 'GAG',
-          'Dambulla Sixers': 'DAS',
-          'Kandy Falcons': 'KFS',
-          'Jaffna Kings': 'JKS',
-          'Colombo Kaps': 'CLK',
-          'Kandy Royals': 'KRL',
-          'London Spirit': 'LDN',
-          'Manchester Super Giants': 'MSG',
-          'Southern Brave': 'SOU',
-          'Welsh Fire': 'WEF',
-          'Birmingham Phoenix': 'BIR',
-          'Trent Rockets': 'TRE',
-          'Oval Invincibles': 'OVAL',
-          'Northern Superchargers': 'NOR',
-          'Worcestershire': 'WORCS',
-          'Derbyshire': 'DERBY',
-          'Lahore Qalandars': 'LQ',
-          'Perth Scorchers': 'PS',
-          'Guyana Amazon Warriors': 'GAW',
-          'San Francisco Unicorns': 'SFU',
-          'BP-W': 'BPW',
-          'TR-W': 'TRW',
-          'GLCS': 'GLC',
-          'SOM': 'SOM'
-        };
-        return map[name] || name.substring(0, 3).toUpperCase();
+      const getText = (el) => {
+        if (!el) return '';
+        return el.textContent ? cleanText(el.textContent) : '';
       };
 
-      const getMatchUrl = (card) => {
-        const links = card.querySelectorAll('a[href*="cricket-live-score"]');
-        for (const link of links) {
-          const href = link.getAttribute('href');
-          if (href && href.includes('cricket-live-score')) {
-            if (href.startsWith('https://')) {
-              return href;
-            } else if (href.startsWith('/')) {
-              return `https://crex.com${href}`;
-            } else {
-              return `https://crex.com/${href}`;
-            }
-          }
-        }
-        return '';
-      };
-
-      cards.forEach((card) => {
-        const cardText = getText(card);
-        
-        if (cardText.includes('Advertisement') || 
-            cardText.includes('News') || 
-            cardText.includes('Video') || 
-            cardText.includes('Photo') ||
-            cardText.includes('Podcast')) {
-          return;
-        }
-
-        const matchUrl = getMatchUrl(card);
-        if (!matchUrl) return;
-
-        let team1Name = '';
-        let team2Name = '';
-
-        const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
-        if (vsMatch) {
-          team1Name = cleanText(vsMatch[1]);
-          team2Name = cleanText(vsMatch[2]);
-        }
-
-        if (!team1Name || !team2Name) {
-          const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
-          const teamNames = [];
+      const containers = document.querySelectorAll('.team-innig, .live-score-card, .match-card, .score-card');
+      
+      containers.forEach(container => {
+        try {
+          const link = container.querySelector('a[href*="cricket-live-score"]');
+          if (!link) return;
           
-          for (const selector of teamSelectors) {
-            const elements = card.querySelectorAll(selector);
-            elements.forEach(el => {
-              const text = cleanText(getText(el));
-              if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
-                teamNames.push(text);
-              }
-            });
-            if (teamNames.length >= 2) break;
+          const href = link.getAttribute('href');
+          if (!href) return;
+          
+          const url = href.startsWith('http') ? href : `https://crex.com${href}`;
+          if (seenUrls.has(url)) return;
+          seenUrls.add(url);
+
+          const urlMatch = url.match(/\/([A-Za-z0-9]+)-vs-([A-Za-z0-9]+)/i);
+          let team1Name = 'Team 1';
+          let team2Name = 'Team 2';
+          
+          if (urlMatch) {
+            team1Name = urlMatch[1].toUpperCase();
+            team2Name = urlMatch[2].toUpperCase();
           }
 
+          const teamElements = container.querySelectorAll('.team-name, .name, .team');
+          let teamNames = [];
+          teamElements.forEach(el => {
+            const name = cleanText(getText(el));
+            if (name && name.length > 1 && name.length < 30) {
+              teamNames.push(name);
+            }
+          });
+          
           if (teamNames.length >= 2) {
             team1Name = teamNames[0];
             team2Name = teamNames[1];
           }
-        }
 
-        const flags = [];
-        const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
-        flagImages.forEach(img => {
-          const src = img.getAttribute('src') || '';
-          if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
-            flags.push(src);
+          const scoreElements = container.querySelectorAll('.score, .runs, .team-score');
+          let scores = [];
+          scoreElements.forEach(el => {
+            const scoreText = cleanText(getText(el));
+            if (scoreText && scoreText.length > 0) {
+              scores.push(scoreText);
+            }
+          });
+
+          let series = '';
+          const seriesEl = container.querySelector('.series-name, .snameTag, .match-series');
+          if (seriesEl) {
+            series = cleanText(getText(seriesEl));
           }
-        });
 
-        let team1Score = '';
-        let team1Wickets = '';
-        let team1Overs = '';
-        let team2Score = '';
-        let team2Wickets = '';
-        let team2Overs = '';
+          let team1Score = '';
+          let team1Wickets = '';
+          let team1Overs = '';
+          let team2Score = '';
+          let team2Wickets = '';
+          let team2Overs = '';
 
-        const scoreElements = card.querySelectorAll('.score, .team-score, .runs, .score-text, .match-score');
-        const oversElements = card.querySelectorAll('.overs, .over, .overs-text, .match-overs');
-        
-        if (scoreElements.length >= 2) {
-          const score1Text = cleanText(getText(scoreElements[0]));
-          const score2Text = cleanText(getText(scoreElements[1]));
-          
-          const score1Match = score1Text.match(/(\d+)[-/](\d+)/);
-          if (score1Match) {
-            team1Score = score1Match[1];
-            team1Wickets = score1Match[2];
+          if (scores.length >= 2) {
+            const score1 = scores[0] || '';
+            const score1Match = score1.match(/(\d+)-(\d+)\s*(\d+)b?/);
+            if (!score1Match) {
+              const score1MatchAlt = score1.match(/(\d+)[-/](\d+)\s*(?:\(([\d.]+)\))?/);
+              if (score1MatchAlt) {
+                team1Score = score1MatchAlt[1];
+                team1Wickets = score1MatchAlt[2];
+                team1Overs = score1MatchAlt[3] || '';
+              }
+            } else {
+              team1Score = score1Match[1];
+              team1Wickets = score1Match[2];
+              team1Overs = score1Match[3] + 'b';
+            }
+
+            const score2 = scores[1] || '';
+            const score2Match = score2.match(/(\d+)-(\d+)\s*(\d+)b?/);
+            if (!score2Match) {
+              const score2MatchAlt = score2.match(/(\d+)[-/](\d+)\s*(?:\(([\d.]+)\))?/);
+              if (score2MatchAlt) {
+                team2Score = score2MatchAlt[1];
+                team2Wickets = score2MatchAlt[2];
+                team2Overs = score2MatchAlt[3] || '';
+              }
+            } else {
+              team2Score = score2Match[1];
+              team2Wickets = score2Match[2];
+              team2Overs = score2Match[3] + 'b';
+            }
           }
-          
-          const score2Match = score2Text.match(/(\d+)[-/](\d+)/);
-          if (score2Match) {
-            team2Score = score2Match[1];
-            team2Wickets = score2Match[2];
+
+          let status = 'Live';
+          const statusEl = container.querySelector('.status, .match-status, .live-status');
+          if (statusEl) {
+            const statusText = cleanText(getText(statusEl));
+            if (statusText) status = statusText;
           }
-        }
 
-        if (oversElements.length >= 2) {
-          team1Overs = cleanText(getText(oversElements[0])).replace(/[()]/g, '');
-          team2Overs = cleanText(getText(oversElements[1])).replace(/[()]/g, '');
-        }
-
-        let series = '';
-        const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series'];
-        for (const selector of seriesSelectors) {
-          const el = card.querySelector(selector);
-          if (el) {
-            series = cleanText(getText(el));
-            break;
-          }
-        }
-
-        if (team1Name && team2Name) {
-          matches.push({
-            url: matchUrl,
-            status: 'LIVE',
+          results.push({
+            url: url,
+            status: status,
             team1: {
               name: team1Name,
-              short: getTeamShortName(team1Name),
-              flag: flags[0] || '',
+              short: team1Name.substring(0, 3).toUpperCase(),
+              flag: '',
               score: team1Score,
               wickets: team1Wickets,
-              overs: team1Overs
+              overs: team1Overs,
             },
             team2: {
               name: team2Name,
-              short: getTeamShortName(team2Name),
-              flag: flags[1] || '',
+              short: team2Name.substring(0, 3).toUpperCase(),
+              flag: '',
               score: team2Score,
               wickets: team2Wickets,
-              overs: team2Overs
+              overs: team2Overs,
             },
-            series: series
+            series: series || 'Unknown Series'
           });
+
+        } catch (e) {
+          // Skip this container
         }
       });
 
-      return matches;
-    }, foundCards);
+      if (results.length === 0) {
+        const links = document.querySelectorAll('a[href*="cricket-live-score"]');
+        links.forEach(link => {
+          try {
+            const href = link.getAttribute('href');
+            if (!href) return;
+            
+            const url = href.startsWith('http') ? href : `https://crex.com${href}`;
+            if (seenUrls.has(url)) return;
+            seenUrls.add(url);
 
-    logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
+            const urlMatch = url.match(/\/([A-Za-z0-9]+)-vs-([A-Za-z0-9]+)/i);
+            if (urlMatch) {
+              const team1Name = urlMatch[1].toUpperCase();
+              const team2Name = urlMatch[2].toUpperCase();
+              
+              const parent = link.closest('div, li, article');
+              const text = parent ? getText(parent) : '';
+              
+              let team1Score = '';
+              let team2Score = '';
+              const scoreMatch = text.match(/(\d+)[-/](\d+)/g);
+              if (scoreMatch && scoreMatch.length >= 2) {
+                team1Score = scoreMatch[0] || '';
+                team2Score = scoreMatch[1] || '';
+              }
+
+              results.push({
+                url: url,
+                status: 'Live',
+                team1: {
+                  name: team1Name,
+                  short: team1Name.substring(0, 3).toUpperCase(),
+                  flag: '',
+                  score: team1Score,
+                  wickets: '',
+                  overs: '',
+                },
+                team2: {
+                  name: team2Name,
+                  short: team2Name.substring(0, 3).toUpperCase(),
+                  flag: '',
+                  score: team2Score,
+                  wickets: '',
+                  overs: '',
+                },
+                series: 'Unknown Series'
+              });
+            }
+          } catch (e) {
+            // Skip this link
+          }
+        });
+      }
+
+      return results;
+    });
+
+    return matches;
+  }
+
+  // ============================================================
+  // PROCESS WITH AGENTS
+  // ============================================================
+  async processWithAgents(discoveredMatches) {
+    logger.info('🤖 Starting Agent-based processing for real-time data...');
     
-    if (discoveredMatches.length > 0) {
-      discoveredMatches.forEach((match, index) => {
-        logger.info(`  ${index + 1}. ${match.team1.name} (${match.team1.score}/${match.team1.wickets}) vs ${match.team2.name} (${match.team2.score}/${match.team2.wickets}) - ${match.url}`);
+    const batches = this.splitIntoBatches(discoveredMatches);
+    const agentPromises = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const agentNum = i + 1;
+      const batch = batches[i];
+
+      if (batch.length === 0) continue;
+
+      const startDelay = i * this.agentStaggerDelay;
+      logger.info(`⏳ Agent ${agentNum} starting in ${startDelay}ms...`);
+
+      const agentPromise = new Promise((resolve) => {
+        setTimeout(async () => {
+          logger.info(`🤖 Agent ${agentNum} started with ${batch.length} matches`);
+          const result = await this.runAgent(agentNum, batch);
+          resolve(result);
+        }, startDelay);
       });
+
+      agentPromises.push(agentPromise);
     }
 
-    deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
-    return discoveredMatches;
+    const results = await Promise.all(agentPromises);
+
+    const allMatches = [];
+    results.forEach((result) => {
+      if (result && result.matches) {
+        allMatches.push(...result.matches);
+      }
+    });
+
+    logger.info(`✅ All agents completed. Total matches: ${allMatches.length}`);
+    return allMatches;
+  }
+
+  // ============================================================
+  // SPLIT INTO BATCHES
+  // ============================================================
+  splitIntoBatches(matches) {
+    const batches = [];
+    const total = matches.length;
+    const batchSize = Math.ceil(total / this.numberOfAgents);
+
+    for (let i = 0; i < this.numberOfAgents; i++) {
+      const start = i * batchSize;
+      const end = Math.min(start + batchSize, total);
+
+      if (start < total) {
+        batches.push(matches.slice(start, end));
+      } else {
+        batches.push([]);
+      }
+    }
+
+    return batches;
+  }
+
+  // ============================================================
+  // RUN AGENT
+  // ============================================================
+  async runAgent(agentNum, batch) {
+    const agentId = `Agent ${agentNum}`;
+    const stats = {
+      total: batch.length,
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      startTime: Date.now(),
+    };
+
+    this.agentStats[agentId] = stats;
+    const results = [];
+
+    const page = await this.context.newPage();
+    page.setDefaultTimeout(60000);
+    page.setDefaultNavigationTimeout(60000);
+
+    try {
+      for (let i = 0; i < batch.length; i++) {
+        const match = batch[i];
+
+        const urlKey = match.url.split('?')[0];
+        if (this.processedUrls.has(urlKey)) {
+          logger.info(`   ⏭️ ${agentId} skipping duplicate: ${match.url}`);
+          continue;
+        }
+        this.processedUrls.add(urlKey);
+
+        stats.processed++;
+        logger.info(`   ${agentId} getting real-time data for: ${match.team1.name} vs ${match.team2.name}`);
+
+        try {
+          const matchData = await this.getRealTimeMatchData(page, match, agentId);
+
+          if (matchData) {
+            results.push(matchData);
+            stats.succeeded++;
+            logger.info(`   ✅ ${agentId} got real-time data for ${match.team1.name} vs ${match.team2.name}`);
+          } else {
+            stats.failed++;
+            const fallbackMatch = this.createFallbackMatch(match);
+            results.push(fallbackMatch);
+          }
+        } catch (error) {
+          stats.failed++;
+          logger.error(`   ❌ ${agentId} error on ${match.team1.name} vs ${match.team2.name}: ${error.message}`);
+          const fallbackMatch = this.createFallbackMatch(match);
+          results.push(fallbackMatch);
+        }
+
+        if (i < batch.length - 1) {
+          await this.sleep(this.matchDelay);
+        }
+      }
+    } catch (error) {
+      logger.error(`❌ ${agentId} crashed: ${error.message}`);
+    } finally {
+      await page.close();
+
+      const duration = (Date.now() - stats.startTime) / 1000;
+      logger.info(
+        `🏁 ${agentId} finished: ${stats.succeeded}/${stats.total} succeeded, ${stats.failed} failed, ${duration}s`
+      );
+    }
+
+    return {
+      agentId,
+      matches: results,
+      stats,
+    };
+  }
+
+  // ============================================================
+  // GET REAL-TIME MATCH DATA
+  // ============================================================
+  async getRealTimeMatchData(page, match, agentId) {
+    try {
+      const url = match.url.includes('?') 
+        ? `${match.url}&_=${this.cacheBuster}`
+        : `${match.url}?_=${this.cacheBuster}`;
+
+      logger.info(`   📡 ${agentId} fetching: ${url}`);
+
+      const userAgent = this.getRandomUserAgent();
+      
+      await page.setExtraHTTPHeaders({
+        'User-Agent': userAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Referer': 'https://crex.com/'
+      });
+
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+
+      try {
+        await page.waitForSelector('.team-1, .team-2, .runs.f-runs, .live-score-card', { timeout: 10000 });
+      } catch (e) {
+        logger.warn(`   ⚠️ ${agentId} timeout waiting for content, continuing...`);
+      }
+
+      await this.sleep(2000 + Math.random() * 2000);
+
+      const matchData = await this.extractRealTimeMatchData(page, match);
+
+      return matchData;
+
+    } catch (error) {
+      logger.error(`   ❌ ${agentId} error getting real-time data: ${error.message}`);
+      return null;
+    }
+  }
+
+  // ============================================================
+  // EXTRACT REAL-TIME MATCH DATA - FIXED FOR ACTUAL HTML STRUCTURE
+  // ============================================================
+  async extractRealTimeMatchData(page, match) {
+    const data = await page.evaluate((match) => {
+      const cleanText = (text) => {
+        if (!text) return '';
+        return text.replace(/\s+/g, ' ').trim();
+      };
+
+      const getText = (el) => {
+        if (!el) return '';
+        return el.textContent ? cleanText(el.textContent) : '';
+      };
+
+      // ============================================================
+      // 1. Get match title and basic info
+      // ============================================================
+      const titleEl = document.querySelector('.match-title, h1, .title');
+      const title = titleEl ? getText(titleEl) : '';
+
+      let series = '';
+      const seriesEl = document.querySelector('.series-name, .snameTag, .match-series, .tournament');
+      if (seriesEl) {
+        series = getText(seriesEl);
+      }
+
+      let venue = 'TBD';
+      const venueEl = document.querySelector('.venue, .match-venue, .venue-name, .location, .stadium');
+      if (venueEl) {
+        venue = getText(venueEl);
+      }
+
+      let status = 'Live';
+      const statusEl = document.querySelector('.status, .match-status, .live-status, .match-state');
+      if (statusEl) {
+        status = getText(statusEl);
+      }
+
+      let format = 'T20';
+      if (title) {
+        if (title.includes('100B') || title.includes('The Hundred')) format = 'The Hundred';
+        else if (title.includes('ODI')) format = 'ODI';
+        else if (title.includes('Test')) format = 'Test';
+      }
+
+      // ============================================================
+      // 2. Get scoreboard data - FIXED for actual HTML structure
+      // ============================================================
+      
+      let battingTeam = { name: '', score: '', runs: null, wickets: null, overs: '' };
+      let bowlingTeam = { name: '' };
+      let crr = null;
+      let rrr = null;
+      let requiredRuns = null;
+      let requiredBalls = null;
+      let target = null;
+
+      // Get batting team from .team-1
+      const team1El = document.querySelector('.team-1');
+      if (team1El) {
+        battingTeam.name = getText(team1El);
+      }
+
+      // Get score from .runs.f-runs span
+      const scoreEl = document.querySelector('.runs.f-runs');
+      if (scoreEl) {
+        const spans = scoreEl.querySelectorAll('span');
+        if (spans.length >= 1) {
+          const scoreText = getText(spans[0]);
+          const scoreMatch = scoreText.match(/(\d+)-(\d+)/);
+          if (scoreMatch) {
+            battingTeam.score = scoreText;
+            battingTeam.runs = parseInt(scoreMatch[1]);
+            battingTeam.wickets = parseInt(scoreMatch[2]);
+          }
+        }
+        if (spans.length >= 2) {
+          battingTeam.overs = getText(spans[1]); // "65b"
+        }
+      }
+
+      // Get bowling team from .team-2
+      const team2El = document.querySelector('.team-2');
+      if (team2El) {
+        bowlingTeam.name = getText(team2El);
+      }
+
+      // Get CRR and RRR from .team-run-rate .title .data
+      const runRateEls = document.querySelectorAll('.team-run-rate .title .data');
+      if (runRateEls.length >= 1) {
+        crr = getText(runRateEls[0]);
+      }
+      if (runRateEls.length >= 2) {
+        rrr = getText(runRateEls[1]);
+      }
+
+      // Get required runs and balls from .final-result
+      const finalResultEl = document.querySelector('.final-result');
+      if (finalResultEl) {
+        const text = getText(finalResultEl);
+        const runsMatch = text.match(/(\d+)\s+runs?/);
+        const ballsMatch = text.match(/(\d+)\s+balls?/);
+        if (runsMatch) requiredRuns = runsMatch[1] + ' runs';
+        if (ballsMatch) requiredBalls = ballsMatch[1] + ' balls';
+      }
+
+      // If bowling team not found, use match.team2
+      if (!bowlingTeam.name) {
+        bowlingTeam.name = match.team2.name;
+      }
+
+      // If batting team not found, use match.team1
+      if (!battingTeam.name) {
+        battingTeam.name = match.team1.name;
+        battingTeam.score = match.team1.score || '';
+        battingTeam.wickets = match.team1.wickets || '';
+        battingTeam.overs = match.team1.overs || '';
+      }
+
+      // ============================================================
+      // 3. Get current batsmen
+      // ============================================================
+      const batsmen = [];
+      const batsmanElements = document.querySelectorAll('.player-card, .batsman, .batter, .batsman-item');
+      batsmanElements.forEach(el => {
+        const nameEl = el.querySelector('.player-name, .name, .batsmen-name, .batter-name');
+        const name = nameEl ? getText(nameEl) : '';
+        if (name) {
+          const fullText = getText(el);
+          const match = fullText.match(/(\d+)\s*\((\d+)\)/);
+          if (match) {
+            const isStriker = el.querySelector('.striker, .on-strike, .strike-icon') !== null;
+            batsmen.push({
+              name: name,
+              runs: match[1],
+              balls: match[2],
+              is_striker: isStriker || batsmen.length === 0
+            });
+          }
+        }
+      });
+
+      // ============================================================
+      // 4. Get current bowler
+      // ============================================================
+      let bowler = { name: '', overs: '', runs: null, wickets: null };
+      const bowlerEl = document.querySelector('.bowler, .current-bowler, .bowler-item');
+      if (bowlerEl) {
+        const nameEl = bowlerEl.querySelector('.player-name, .name, .bowler-name');
+        if (nameEl) {
+          bowler.name = getText(nameEl);
+        }
+        const fullText = getText(bowlerEl);
+        const match = fullText.match(/(\d+)-(\d+)\s*\(([\d.]+)\s*b?\)/);
+        if (match) {
+          bowler.wickets = parseInt(match[1]);
+          bowler.runs = parseInt(match[2]);
+          bowler.overs = match[3];
+        }
+      }
+
+      // ============================================================
+      // 5. Get overs/ball-by-ball data
+      // ============================================================
+      const overs = [];
+      const overElements = document.querySelectorAll('.over, .overs-slide, .over-item, .over-container');
+      overElements.forEach(el => {
+        const balls = [];
+        const ballElements = el.querySelectorAll('.ball, .delivery, .ball-item');
+        ballElements.forEach(b => {
+          const text = getText(b);
+          if (text) balls.push(text);
+        });
+        if (balls.length > 0) {
+          const totalEl = el.querySelector('.total, .over-total, .over-score');
+          const total = totalEl ? getText(totalEl) : '';
+          const overNumEl = el.querySelector('.over-number, .over-title');
+          const overNum = overNumEl ? getText(overNumEl) : '';
+          overs.push({ over: overNum, balls, total });
+        }
+      });
+
+      // ============================================================
+      // 6. Get commentary
+      // ============================================================
+      const commentary = [];
+      const commentaryElements = document.querySelectorAll('.commentary-item, .comment, .ball-commentary, .commentary-entry');
+      commentaryElements.forEach(el => {
+        const ballEl = el.querySelector('.ball-number, .ball, .over-ball');
+        const textEl = el.querySelector('.comment-text, .description, .comment, .text');
+        const ball = ballEl ? getText(ballEl) : '';
+        const text = textEl ? getText(textEl) : '';
+        if (ball || text) {
+          commentary.push({ ball, text });
+        }
+      });
+
+      // ============================================================
+      // 7. Get toss info
+      // ============================================================
+      let toss = { status: 'Not Started' };
+      const tossEl = document.querySelector('.toss, .toss-info, .match-toss');
+      if (tossEl) {
+        const tossText = getText(tossEl);
+        if (tossText) {
+          toss.status = tossText;
+          const winnerMatch = tossText.match(/([A-Za-z\s]+)\s+won the toss/i);
+          if (winnerMatch) {
+            toss.winner = winnerMatch[1].trim();
+            if (tossText.includes('bat')) toss.decision = 'bat';
+            else if (tossText.includes('bowl')) toss.decision = 'bowl';
+          }
+        }
+      }
+
+      // ============================================================
+      // 8. Get match ID from URL
+      // ============================================================
+      const urlMatch = match.url.match(/\/cricket-live-score\/([A-Za-z0-9-]+)/i);
+      const matchIdFromUrl = urlMatch ? urlMatch[1] : `live_${Date.now()}`;
+
+      // ============================================================
+      // 9. BUILD FINAL DATA OBJECT
+      // ============================================================
+      return {
+        match_id: matchIdFromUrl,
+        match_url: match.url,
+        series: {
+          id: `series_${Date.now()}`,
+          name: series || match.series || 'Unknown Series',
+          short_name: series ? series.substring(0, 20) : '',
+          season: new Date().getFullYear().toString(),
+        },
+        match: {
+          number: title.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B|The Hundred))/i)?.[0] || '',
+          format: format,
+          status: status,
+          start_time: '',
+          current_innings: '',
+          current_ball: '',
+          live_current_score: battingTeam.score || '',
+        },
+        venue: {
+          id: `venue_${Date.now()}`,
+          name: venue,
+        },
+        teams: {
+          home: {
+            id: `team_${battingTeam.name || match.team1.name}`,
+            name: battingTeam.name || match.team1.name,
+            short_name: (battingTeam.name || match.team1.name).substring(0, 3).toUpperCase(),
+            logo: match.team1.flag || '',
+          },
+          away: {
+            id: `team_${bowlingTeam.name || match.team2.name}`,
+            name: bowlingTeam.name || match.team2.name,
+            short_name: (bowlingTeam.name || match.team2.name).substring(0, 3).toUpperCase(),
+            logo: match.team2.flag || '',
+          },
+        },
+        scoreboard: {
+          batting_team: battingTeam,
+          bowling_team: bowlingTeam,
+          target: target,
+          required_runs: requiredRuns,
+          required_balls: requiredBalls,
+          crr: crr,
+          rrr: rrr,
+          current_ball: '',
+        },
+        current_batsmen: batsmen,
+        current_bowler: bowler,
+        overs: overs,
+        commentary: commentary,
+        prediction: {
+          home_probability: null,
+          away_probability: null,
+          projected_scores: []
+        },
+        toss: toss,
+        weather: null,
+        countdown: null,
+        _lastUpdated: new Date().toISOString(),
+        _updateCount: 0
+      };
+    }, match);
+
+    // Increment update count
+    data._updateCount = (data._updateCount || 0) + 1;
+    data._lastUpdated = new Date().toISOString();
+
+    return data;
   }
 
   // ============================================================
@@ -1209,7 +1809,7 @@ class LiveScraper extends BaseCrexScraper {
         id: `series_${Date.now()}`,
         name: discovered.series || 'Unknown Series',
         short_name: '',
-        season: new Date().getFullYear().toString()
+        season: new Date().getFullYear().toString(),
       },
       match: {
         number: 'Match',
@@ -1217,35 +1817,42 @@ class LiveScraper extends BaseCrexScraper {
         status: 'Live',
         start_time: '',
         current_innings: '',
-        current_ball: ''
+        current_ball: '',
+        live_current_score: '',
       },
       venue: {
         id: `venue_${Date.now()}`,
-        name: 'TBD'
+        name: 'TBD',
       },
       teams: {
         home: {
           id: this.getTeamId(discovered.team1.name),
           name: discovered.team1.name || 'Team 1',
           short_name: discovered.team1.short || 'T1',
-          logo: discovered.team1.flag || ''
+          logo: discovered.team1.flag || '',
         },
         away: {
           id: this.getTeamId(discovered.team2.name),
           name: discovered.team2.name || 'Team 2',
           short_name: discovered.team2.short || 'T2',
-          logo: discovered.team2.flag || ''
-        }
+          logo: discovered.team2.flag || '',
+        },
       },
       scoreboard: {
-        batting_team: { name: discovered.team1.name, score: discovered.team1.score || '', runs: null, wickets: null, overs: discovered.team1.overs || '' },
+        batting_team: {
+          name: discovered.team1.name,
+          score: discovered.team1.score || '',
+          runs: null,
+          wickets: null,
+          overs: discovered.team1.overs || '',
+        },
         bowling_team: { name: discovered.team2.name },
         target: null,
         required_runs: null,
         required_balls: null,
         crr: null,
         rrr: null,
-        current_ball: ''
+        current_ball: '',
       },
       current_batsmen: [],
       current_bowler: { name: '', overs: '', runs: null, wickets: null },
@@ -1254,805 +1861,10 @@ class LiveScraper extends BaseCrexScraper {
       prediction: { home_probability: null, away_probability: null, projected_scores: [] },
       toss: { status: 'Not Started', winner: '', decision: '' },
       weather: null,
-      countdown: null
+      countdown: null,
+      _lastUpdated: new Date().toISOString(),
+      _updateCount: 0
     };
-  }
-
-  // ============================================================
-  // EXTRACT MATCH DETAILS
-  // ============================================================
-  async extractMatchDetails(discovered) {
-    const series = await this.extractSeries(this.page);
-    const venue = await this.extractVenue(this.page);
-    const scoreboard = await this.extractScoreboard(this.page);
-    const currentBatsmen = await this.extractCurrentBatsmen(this.page);
-    const currentBowler = await this.extractCurrentBowler(this.page);
-    const overs = await this.extractOversTimeline(this.page);
-    const commentary = await this.extractCommentary(this.page);
-    const prediction = await this.extractPrediction(this.page);
-    const toss = await this.extractToss(this.page);
-    
-    // Get weather
-    let weather = null;
-    if (venue || series || discovered.team1.name || discovered.team2.name) {
-      weather = await this.getWeatherForVenue(
-        venue,
-        series,
-        '',
-        discovered.team1.name,
-        discovered.team2.name,
-        discovered.url
-      );
-    }
-
-    let format = 'T20';
-    const titleText = await this.extractTextFromSelectors(this.page, this.page, [
-      'h1', '.match-title', '.title'
-    ]);
-    if (titleText) {
-      if (titleText.includes('ODI')) format = 'ODI';
-      else if (titleText.includes('Test')) format = 'Test';
-      else if (titleText.includes('100B')) format = 'The Hundred';
-    }
-
-    return {
-      match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      match_url: discovered.url,
-      series: {
-        id: `series_${Date.now()}`,
-        name: series || discovered.series || 'Unknown Series',
-        short_name: series ? series.substring(0, 20) : '',
-        season: new Date().getFullYear().toString()
-      },
-      match: {
-        number: titleText ? (titleText.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B))/i)?.[0] || 'Match') : 'Match',
-        format: format,
-        status: 'Live',
-        start_time: '',
-        current_innings: '',
-        current_ball: scoreboard.current_ball || ''
-      },
-      venue: {
-        id: `venue_${Date.now()}`,
-        name: venue || 'TBD'
-      },
-      teams: {
-        home: {
-          id: this.getTeamId(scoreboard.batting_team.name || discovered.team1.name),
-          name: scoreboard.batting_team.name || discovered.team1.name,
-          short_name: discovered.team1.short || '',
-          logo: discovered.team1.flag || ''
-        },
-        away: {
-          id: this.getTeamId(scoreboard.bowling_team.name || discovered.team2.name),
-          name: scoreboard.bowling_team.name || discovered.team2.name,
-          short_name: discovered.team2.short || '',
-          logo: discovered.team2.flag || ''
-        }
-      },
-      scoreboard: {
-        batting_team: {
-          name: scoreboard.batting_team.name || discovered.team1.name,
-          score: scoreboard.batting_team.score || discovered.team1.score || '',
-          runs: scoreboard.batting_team.runs,
-          wickets: scoreboard.batting_team.wickets,
-          overs: scoreboard.batting_team.overs || discovered.team1.overs || ''
-        },
-        bowling_team: {
-          name: scoreboard.bowling_team.name || discovered.team2.name
-        },
-        target: scoreboard.target,
-        required_runs: scoreboard.required_runs,
-        required_balls: scoreboard.required_balls,
-        crr: scoreboard.crr,
-        rrr: scoreboard.rrr,
-        current_ball: scoreboard.current_ball || ''
-      },
-      current_batsmen: currentBatsmen,
-      current_bowler: currentBowler,
-      overs: overs,
-      commentary: commentary,
-      prediction: prediction,
-      toss: toss,
-      weather: weather || null,
-      countdown: null
-    };
-  }
-
-  // ============================================================
-  // EXTRACT CURRENT BATSMEN
-  // ============================================================
-  async extractCurrentBatsmen(page) {
-    const batsmen = [];
-    
-    try {
-      await page.waitForSelector('.player-card-wrapper, .playing-batsmen-wrapper, .player-profile, .player-card', {
-        timeout: 10000
-      });
-    } catch (e) {}
-
-    const battingContainerSelectors = [
-      '.player-active', '.player-card-wrapper', '.player-card', '.player-profile',
-      '.playing-batsmen-wrapper', '.batsmen-partnership', '.batsmen-info-wrapper',
-      '.live-data', '.player-section', '.batting-card', '.innings-batting',
-      '[class*="batsmen"]', '[class*="player-card"]', '[class*="player-profile"]',
-      '.team-innig .player-info', '.score-card .player-info'
-    ];
-    
-    let container = null;
-    for (const selector of battingContainerSelectors) {
-      try {
-        const found = await page.$(selector);
-        if (found) {
-          container = found;
-          break;
-        }
-      } catch (e) { continue; }
-    }
-    if (!container) return batsmen;
-
-    const cardSelectors = [
-      '.player-card-wrapper', '.player-card', '.player-profile', '.batsman-item',
-      '.batsman', '[class*="player-card"]', '[class*="player-profile"]',
-      '[class*="batsman"]', '.player-info'
-    ];
-    
-    let cards = [];
-    for (const selector of cardSelectors) {
-      try {
-        const found = await container.$$(selector);
-        if (found && found.length > 0) {
-          cards = found;
-          break;
-        }
-      } catch (e) { continue; }
-    }
-    if (cards.length === 0) return batsmen;
-
-    for (let i = 0; i < cards.length && batsmen.length < 2; i++) {
-      const card = cards[i];
-      try {
-        let name = '';
-        const nameSelectors = [
-          '.batsmen-name', '.player-name', '.playerName', '.name',
-          '.p-name', 'a[href*="/player/"] p', 'a[href*="/player/"]'
-        ];
-        for (const nameSel of nameSelectors) {
-          try {
-            const nameEl = await card.$(nameSel);
-            if (nameEl) {
-              const text = await page.evaluate(el => el.textContent.trim(), nameEl);
-              if (text && text.length > 0 && text.length < 50) {
-                name = text;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-        if (!name) continue;
-
-        let runs = '', balls = '';
-        const scoreSelectors = ['.batsmen-score', '.runs', '.score'];
-        for (const scoreSel of scoreSelectors) {
-          try {
-            const scoreEl = await card.$(scoreSel);
-            if (scoreEl) {
-              const scoreText = await page.evaluate(el => el.textContent.trim(), scoreEl);
-              if (scoreText) {
-                const scoreMatch = scoreText.match(/(\d+)\s*\(\s*(\d+)\s*\)/);
-                if (scoreMatch) {
-                  runs = scoreMatch[1];
-                  balls = scoreMatch[2];
-                  break;
-                }
-                const numMatch = scoreText.match(/(\d+)/);
-                if (numMatch) { runs = numMatch[1]; break; }
-              }
-            }
-          } catch (e) {}
-        }
-
-        let image = null;
-        const imageSelectors = ['.batsmen-image img', '.player-image img', 'img[src*="player"]'];
-        for (const imgSel of imageSelectors) {
-          try {
-            const imgEl = await card.$(imgSel);
-            if (imgEl) {
-              let src = await page.evaluate(el => el.getAttribute('src'), imgEl);
-              if (src && !src.includes('placeholder')) {
-                image = src.startsWith('/') ? `https://crex.com${src}` : src;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-
-        let profileUrl = null;
-        const profileSelectors = ['a[href*="/player/"]', 'a[href*="player-profile"]'];
-        for (const profSel of profileSelectors) {
-          try {
-            const profEl = await card.$(profSel);
-            if (profEl) {
-              const href = await page.evaluate(el => el.getAttribute('href'), profEl);
-              if (href) {
-                profileUrl = href.startsWith('/') ? `https://crex.com${href}` : href;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-
-        let is_striker = false;
-        try {
-          const strikeIcon = await card.$('.circle-strike-icon');
-          if (strikeIcon) is_striker = true;
-        } catch (e) {}
-        if (!is_striker) {
-          try {
-            const svgs = await card.$$('svg');
-            for (const svg of svgs) {
-              const svgHtml = await page.evaluate(el => el.outerHTML, svg);
-              if (svgHtml && (svgHtml.includes('ce_highlight_ac2') || svgHtml.includes('highlight_ac2'))) {
-                is_striker = true;
-                break;
-              }
-            }
-          } catch (e) {}
-        }
-
-        batsmen.push({
-          name: name,
-          runs: runs || null,
-          balls: balls || null,
-          image: image,
-          profile_url: profileUrl,
-          is_striker: is_striker
-        });
-
-      } catch (error) {
-        continue;
-      }
-    }
-
-    if (batsmen.length > 0) {
-      const strikers = batsmen.filter(b => b.is_striker === true);
-      if (strikers.length === 0) {
-        batsmen[0].is_striker = true;
-      } else if (strikers.length > 1) {
-        let foundFirst = false;
-        for (const batsman of batsmen) {
-          if (batsman.is_striker) {
-            if (!foundFirst) { foundFirst = true; }
-            else { batsman.is_striker = false; }
-          }
-        }
-      }
-    }
-    return batsmen;
-  }
-
-  // ============================================================
-  // EXTRACT CURRENT BOWLER
-  // ============================================================
-  async extractCurrentBowler(page) {
-    const bowler = { name: '', overs: '', runs: null, wickets: null };
-    try {
-      const bowlingContainerSelectors = [
-        '.player-card-wrapper', '.player-card.border', '.player-profile',
-        '.bowling-card', '.bowler-info', '.current-bowler', '.bowler-container',
-        '.player-info', '[class*="bowler"]', '[class*="bowling"]'
-      ];
-      
-      let container = null;
-      for (const selector of bowlingContainerSelectors) {
-        try {
-          const found = await page.$(selector);
-          if (found) {
-            container = found;
-            break;
-          }
-        } catch (e) { continue; }
-      }
-
-      if (!container) {
-        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
-        if (teamInnings.length >= 2) {
-          const bowlingTeam = teamInnings[1];
-          const playerCards = await bowlingTeam.$$('.player-card, .player-card-wrapper, .player-profile');
-          if (playerCards.length > 0) {
-            container = playerCards[0];
-          }
-        }
-      }
-
-      if (!container) return bowler;
-
-      const nameSelectors = [
-        '.batsmen-name', '.player-name', '.name', '.bowler-name',
-        'a[href*="/player/"] p', 'a[href*="/player/"]', '.p-name'
-      ];
-      for (const nameSel of nameSelectors) {
-        try {
-          const nameEl = await container.$(nameSel);
-          if (nameEl) {
-            const text = await page.evaluate(el => el.textContent.trim(), nameEl);
-            if (text && text.length > 0 && text.length < 50) {
-              bowler.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-
-      const figuresSelectors = [
-        '.bowling-figures', '.figures', '.stats', '.score',
-        '.bowling-stats', '.bowler-stats'
-      ];
-      for (const figSel of figuresSelectors) {
-        try {
-          const figEl = await container.$(figSel);
-          if (figEl) {
-            const text = await page.evaluate(el => el.textContent.trim(), figEl);
-            if (text) {
-              const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
-              if (figuresMatch) {
-                bowler.wickets = parseInt(figuresMatch[1]);
-                bowler.runs = parseInt(figuresMatch[2]);
-                bowler.overs = figuresMatch[3];
-                break;
-              }
-            }
-          }
-        } catch (e) {}
-      }
-
-      if (!bowler.overs && !bowler.runs && !bowler.wickets) {
-        try {
-          const text = await page.evaluate(el => el.textContent.trim(), container);
-          if (text) {
-            const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
-            if (figuresMatch) {
-              bowler.wickets = parseInt(figuresMatch[1]);
-              bowler.runs = parseInt(figuresMatch[2]);
-              bowler.overs = figuresMatch[3];
-            }
-          }
-        } catch (e) {}
-      }
-    } catch (error) {}
-    return bowler;
-  }
-
-  // ============================================================
-  // EXTRACT TOSS
-  // ============================================================
-  async extractToss(page) {
-    const toss = { status: 'Not Started' };
-    let foundToss = false;
-    let tossMessage = '';
-
-    const tossSelectors = [
-      '.toss-wrap p', '.toss-wrap', '[class*="toss"] p', '[class*="toss"]',
-      '.match-info .toss', '.toss-info', '.toss-detail', '.match-toss'
-    ];
-
-    for (const selector of tossSelectors) {
-      try {
-        const elements = await page.$$(selector);
-        for (const el of elements) {
-          try {
-            let text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text && text.length > 0) {
-              text = text.replace(/\s+/g, ' ').trim();
-              if (text.includes('won the toss')) {
-                tossMessage = text;
-                foundToss = true;
-                toss.status = tossMessage;
-                return toss;
-              }
-            }
-          } catch (e) { continue; }
-        }
-        if (foundToss) break;
-      } catch (error) { continue; }
-    }
-
-    if (!foundToss) {
-      try {
-        const bodyText = await page.evaluate(() => document.body.textContent);
-        const lines = bodyText.split('\n');
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine.includes('won the toss')) {
-            tossMessage = trimmedLine.replace(/\s+/g, ' ').trim();
-            foundToss = true;
-            toss.status = tossMessage;
-            return toss;
-          }
-        }
-      } catch (e) {}
-    }
-
-    return toss;
-  }
-
-  // ============================================================
-  // EXTRACT SERIES
-  // ============================================================
-  async extractSeries(page) {
-    const selectors = [
-      '.series-name', '.snameTag', '.match-series', '.series-title',
-      '.tournament', '.series', '.match-tournament', 'h1',
-      '.match-header .series', '.match-info .series'
-    ];
-    for (const selector of selectors) {
-      try {
-        const el = await page.$(selector);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text && text.length > 0) {
-            return text;
-          }
-        }
-      } catch (e) {}
-    }
-    try {
-      const title = await page.title();
-      if (title && !title.includes('Cricket') && title.length > 3) {
-        return title;
-      }
-    } catch (e) {}
-    return '';
-  }
-
-  // ============================================================
-  // EXTRACT VENUE
-  // ============================================================
-  async extractVenue(page) {
-    const selectors = [
-      '.venue', '.match-venue', '.venue-name', '.location', '.stadium',
-      '.match-location', '.match-info .venue', '.match-details .venue',
-      '.matchInfo', '.info-row', '.venue-info', '.meta-info',
-      '.scorecard-header', '[data-testid*="venue"]', '[class*="venue"]',
-      '[class*="location"]'
-    ];
-    
-    for (const selector of selectors) {
-      try {
-        const elements = await page.$$(selector);
-        for (const el of elements) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text && text.length > 3 && !text.includes('Over') && !text.includes('wd')) {
-            return text;
-          }
-        }
-      } catch (e) {}
-    }
-    
-    try {
-      const bodyText = await page.evaluate(() => document.body.textContent);
-      const patterns = [
-        /Venue:\s*([^,\n]+(?:,[^,\n]+)?)/i,
-        /at\s+([A-Za-z\s,]+(?:Stadium|Ground|Park|Gardens|Oval))/i,
-        /Stadium:\s*([^,\n]+)/i,
-        /Ground:\s*([^,\n]+)/i,
-        /Location:\s*([^,\n]+)/i
-      ];
-      for (const pattern of patterns) {
-        const match = bodyText.match(pattern);
-        if (match && match[1]) {
-          const venue = match[1].trim();
-          if (venue && venue.length > 3) {
-            return venue;
-          }
-        }
-      }
-    } catch (e) {}
-    
-    return '';
-  }
-
-  // ============================================================
-  // EXTRACT SCOREBOARD - Supports The Hundred (35b) format
-  // ============================================================
-  async extractScoreboard(page) {
-    const scoreboard = {
-      batting_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
-      bowling_team: { name: '' },
-      target: null,
-      required_runs: null,
-      required_balls: null,
-      crr: null,
-      rrr: null,
-      current_ball: ''
-    };
-
-    const teamInningsSelectors = ['.team-innig', '.live-data', '.team-result', '.result-box'];
-    let battingEl = null;
-    let bowlingEl = null;
-    
-    for (const selector of teamInningsSelectors) {
-      try {
-        const elements = await page.$$(selector);
-        if (elements.length >= 2) {
-          battingEl = elements[0];
-          bowlingEl = elements[1];
-          break;
-        }
-      } catch (e) {}
-    }
-
-    if (battingEl && bowlingEl) {
-      const nameSelectors = ['.team-name', '.name', '.team-title', '.team-label'];
-      for (const sel of nameSelectors) {
-        try {
-          const el = await battingEl.$(sel);
-          if (el) {
-            const text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text) {
-              scoreboard.batting_team.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-
-      const runsContainer = await battingEl.$('.runs, .score, .team-score');
-      
-      if (runsContainer) {
-        const spans = await runsContainer.$$('span');
-        const spanTexts = [];
-        for (const span of spans) {
-          const text = await page.evaluate(el => el.textContent.trim(), span);
-          if (text) spanTexts.push(text);
-        }
-        
-        if (spanTexts.length > 0) {
-          const scoreText = spanTexts[0];
-          const scoreMatch = scoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
-          if (scoreMatch) {
-            scoreboard.batting_team.score = scoreText;
-            scoreboard.batting_team.runs = parseInt(scoreMatch[1]);
-            scoreboard.batting_team.wickets = parseInt(scoreMatch[2]);
-          } else {
-            const numMatch = scoreText.match(/(\d+)/);
-            if (numMatch) {
-              scoreboard.batting_team.score = scoreText;
-              scoreboard.batting_team.runs = parseInt(numMatch[1]);
-            }
-          }
-        }
-        
-        if (spanTexts.length > 1) {
-          const oversValue = spanTexts[1];
-          const overRegex = /^(\d+\.\d+|\d+b)$/i;
-          if (oversValue && overRegex.test(oversValue)) {
-            scoreboard.batting_team.overs = oversValue;
-            scoreboard.current_ball = oversValue.replace(/[()]/g, '');
-          } else {
-            const allText = await page.evaluate(el => el.textContent.trim(), runsContainer);
-            const overMatch = allText.match(/(\d+\.\d+|\d+b)/);
-            if (overMatch) {
-              scoreboard.batting_team.overs = overMatch[1];
-              scoreboard.current_ball = overMatch[1].replace(/[()]/g, '');
-            }
-          }
-        } else {
-          const battingText = await page.evaluate(el => el.textContent.trim(), battingEl);
-          const overMatch = battingText.match(/(\d+\.\d+|\d+b)/);
-          if (overMatch) {
-            scoreboard.batting_team.overs = overMatch[1];
-            scoreboard.current_ball = overMatch[1].replace(/[()]/g, '');
-          }
-        }
-      }
-
-      for (const sel of nameSelectors) {
-        try {
-          const el = await bowlingEl.$(sel);
-          if (el) {
-            const text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text) {
-              scoreboard.bowling_team.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    const crrSelectors = ['.crr', '.current-run-rate', '.run-rate'];
-    for (const sel of crrSelectors) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const numMatch = text.match(/(\d+\.\d+)/);
-            if (numMatch) { scoreboard.crr = parseFloat(numMatch[1]); break; }
-          }
-        }
-      } catch (e) {}
-    }
-
-    const rrrSelectors = ['.rrr', '.required-run-rate', '.req-run-rate'];
-    for (const sel of rrrSelectors) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const numMatch = text.match(/(\d+\.\d+)/);
-            if (numMatch) { scoreboard.rrr = parseFloat(numMatch[1]); break; }
-          }
-        }
-      } catch (e) {}
-    }
-
-    return scoreboard;
-  }
-
-  // ============================================================
-  // EXTRACT OVERS TIMELINE
-  // ============================================================
-  async extractOversTimeline(page) {
-    const overs = [];
-    const containerSelectors = [
-      '.overs-timeline', '.overs-slide-container', '.overs-container'
-    ];
-    for (const containerSel of containerSelectors) {
-      try {
-        const container = await page.$(containerSel);
-        if (container) {
-          const slideSelectors = ['.overs-slide', '.content', '.over-item'];
-          for (const slideSel of slideSelectors) {
-            const slides = await container.$$(slideSel);
-            for (const slide of slides) {
-              let overNumber = '';
-              const overSelectors = [
-                '.over-title', '.over-number', '.title', '.header', 'h4'
-              ];
-              for (const sel of overSelectors) {
-                try {
-                  const el = await slide.$(sel);
-                  if (el) {
-                    const text = await page.evaluate(el => el.textContent.trim(), el);
-                    if (text) {
-                      let match = text.match(/Over\s*(\d+)/i);
-                      if (match) { overNumber = match[1]; break; }
-                      match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
-                      if (match) { overNumber = `${match[1]}th Five`; break; }
-                      if (text.match(/^\d+$/)) { overNumber = text; break; }
-                    }
-                  }
-                } catch (e) {}
-              }
-              if (!overNumber) {
-                try {
-                  const text = await page.evaluate(el => el.textContent.trim(), slide);
-                  let match = text.match(/Over\s*(\d+)/i);
-                  if (match) { overNumber = match[1]; }
-                  else {
-                    match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
-                    if (match) { overNumber = `${match[1]}th Five`; }
-                  }
-                } catch (e) {}
-              }
-              const balls = [];
-              const ballElements = await slide.$$('.over-ball, .ball');
-              for (const ballEl of ballElements) {
-                const result = await page.evaluate(el => el.textContent.trim(), ballEl);
-                if (result) balls.push(result);
-              }
-              let total = '';
-              const totalSelectors = ['.total', '.over-total'];
-              for (const sel of totalSelectors) {
-                try {
-                  const el = await slide.$(sel);
-                  if (el) {
-                    const text = await page.evaluate(el => el.textContent.trim(), el);
-                    if (text) { total = text.replace(/^=\s*/, '').trim(); break; }
-                  }
-                } catch (e) {}
-              }
-              if (!total) {
-                try {
-                  const text = await page.evaluate(el => el.textContent.trim(), slide);
-                  const match = text.match(/=\s*(\d+)/);
-                  if (match) { total = match[1]; }
-                } catch (e) {}
-              }
-              if (overNumber || balls.length > 0) {
-                overs.push({ over: overNumber || '', balls: balls, total: total || '' });
-              }
-            }
-            if (overs.length > 0) break;
-          }
-        }
-        if (overs.length > 0) break;
-      } catch (e) {}
-    }
-    return overs;
-  }
-
-  // ============================================================
-  // EXTRACT COMMENTARY
-  // ============================================================
-  async extractCommentary(page) {
-    const commentary = [];
-    const containerSelectors = [
-      '.commentary-container', '.commentary-section', '.commentary-list', '.live-commentary'
-    ];
-    for (const containerSel of containerSelectors) {
-      try {
-        const container = await page.$(containerSel);
-        if (container) {
-          const itemSelectors = ['.commentary-item', '.comment', '.ball-commentary'];
-          for (const itemSel of itemSelectors) {
-            const items = await container.$$(itemSel);
-            for (const item of items) {
-              const ball = await this.extractTextFromSelectors(page, item, [
-                '.ball-number', '.over-ball', '.ball'
-              ]);
-              const result = await this.extractTextFromSelectors(page, item, [
-                '.result', '.event', '.ball-result'
-              ]);
-              const text = await this.extractTextFromSelectors(page, item, [
-                '.comment-text', '.description', '.comment'
-              ]);
-              if (ball || text || result) {
-                commentary.push({ ball: ball || '', result: result || '', text: text || '' });
-              }
-            }
-            if (commentary.length > 0) break;
-          }
-        }
-        if (commentary.length > 0) break;
-      } catch (e) {}
-    }
-    return commentary;
-  }
-
-  // ============================================================
-  // EXTRACT PREDICTION
-  // ============================================================
-  async extractPrediction(page) {
-    const prediction = { home_probability: null, away_probability: null, projected_scores: [] };
-    try {
-      const displayFlex = await page.$('.displayFlex');
-      if (displayFlex) {
-        const percentageElements = await displayFlex.$$('.percentageScreenText');
-        const percentages = [];
-        for (const el of percentageElements) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const num = parseInt(text.replace('%', ''));
-            if (!isNaN(num)) percentages.push(num);
-          }
-        }
-        if (percentages.length >= 2) {
-          prediction.home_probability = percentages[0];
-          prediction.away_probability = percentages[1];
-        }
-      }
-    } catch (error) {}
-    return prediction;
-  }
-
-  // ============================================================
-  // HELPER: EXTRACT TEXT FROM SELECTORS
-  // ============================================================
-  async extractTextFromSelectors(page, element, selectors) {
-    for (const selector of selectors) {
-      try {
-        const el = await element.$(selector);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) return text;
-        }
-      } catch (e) {}
-    }
-    return '';
   }
 
   // ============================================================
@@ -2080,7 +1892,25 @@ class LiveScraper extends BaseCrexScraper {
     logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
     logger.info(`   Errors: ${this.stats.errors}`);
     logger.info(`   Total Requests: ${this.requestCount}`);
-    logger.info(`   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`);
+    logger.info(
+      `   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`
+    );
+
+    logger.info(`🤖 Agent Statistics:`);
+    for (const [agentId, stats] of Object.entries(this.agentStats)) {
+      const duration = (Date.now() - stats.startTime) / 1000;
+      logger.info(
+        `   ${agentId}: ${stats.succeeded}/${stats.total} succeeded, ${stats.failed} failed, ${duration}s`
+      );
+    }
+
+    logger.info(`📊 Active Matches: ${this.activeMatches.size}`);
+    for (const [matchId, matchData] of this.activeMatches) {
+      const match = matchData.data;
+      const lastUpdate = matchData.lastUpdate;
+      const age = (Date.now() - lastUpdate) / 1000;
+      logger.info(`   ${match.teams.home.name} vs ${match.teams.away.name} - ${age.toFixed(1)}s ago`);
+    }
   }
 }
 
