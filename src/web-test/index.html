@@ -79,6 +79,19 @@
         background: #ff4444;
         border-radius: 50%;
       }
+      .status.connecting {
+        background: rgba(255, 170, 0, 0.2);
+        color: #ffaa00;
+        border: 1px solid rgba(255, 170, 0, 0.3);
+      }
+      .status.connecting::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: #ffaa00;
+        border-radius: 50%;
+        animation: pulse 0.8s infinite;
+      }
       @keyframes pulse {
         0%,
         100% {
@@ -128,6 +141,9 @@
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
       }
+      .btn:active {
+        transform: translateY(0);
+      }
       .btn-primary {
         background: #667eea;
         color: #fff;
@@ -153,6 +169,11 @@
         background: #00b894;
         color: #fff;
       }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+      }
 
       /* Tabs */
       .tabs {
@@ -161,6 +182,7 @@
         margin-bottom: 20px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         padding-bottom: 10px;
+        flex-wrap: wrap;
       }
       .tab-btn {
         padding: 10px 25px;
@@ -228,6 +250,8 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 12px;
+        flex-wrap: wrap;
+        gap: 8px;
       }
       .match-series {
         font-size: 0.75em;
@@ -506,6 +530,7 @@
         padding: 5px 10px;
         background: rgba(0, 0, 0, 0.2);
         border-radius: 4px;
+        flex-wrap: wrap;
       }
       .weather-item {
         display: flex;
@@ -521,6 +546,8 @@
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         font-size: 0.7em;
         opacity: 0.5;
+        flex-wrap: wrap;
+        gap: 5px;
       }
 
       /* Score Update Flash */
@@ -821,9 +848,11 @@
       .log-time {
         opacity: 0.4;
         min-width: 70px;
+        flex-shrink: 0;
       }
       .log-message {
         flex: 1;
+        word-break: break-word;
       }
       .log-message.success {
         color: #00cc88;
@@ -841,8 +870,18 @@
         color: #ffaa00;
         font-weight: 600;
       }
+      .log-message.connection {
+        color: #00b894;
+      }
 
+      /* Responsive */
       @media (max-width: 768px) {
+        body {
+          padding: 10px;
+        }
+        .header {
+          padding: 15px 20px;
+        }
         .header h1 {
           font-size: 1.5em;
         }
@@ -859,6 +898,55 @@
         .team-form-grid {
           grid-template-columns: 1fr;
         }
+        .stats-grid {
+          gap: 8px;
+        }
+        .stat-box {
+          font-size: 0.75em;
+          padding: 4px 10px;
+        }
+        .status-bar {
+          gap: 10px;
+        }
+        .tabs {
+          gap: 5px;
+        }
+        .tab-btn {
+          padding: 8px 15px;
+          font-size: 0.85em;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .teams {
+          flex-direction: column;
+          gap: 10px;
+        }
+        .vs {
+          padding: 5px 0;
+        }
+        .match-card {
+          padding: 15px;
+        }
+        .controls {
+          gap: 6px;
+        }
+        .btn {
+          font-size: 0.75em;
+          padding: 5px 12px;
+        }
+        .log-entry {
+          flex-wrap: wrap;
+        }
+        .log-time {
+          min-width: 60px;
+        }
+      }
+
+      /* Scrollbar for Firefox */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
       }
     </style>
   </head>
@@ -868,7 +956,7 @@
         <h1>🏏 Live Cricket Scores</h1>
         <div class="header-sub">Real-time Updates via WebSocket</div>
         <div class="status-bar">
-          <div class="status disconnected" id="status">Disconnected</div>
+          <div class="status disconnected" id="status">🔴 Disconnected</div>
           <div class="stats-grid">
             <div class="stat-box"><span>📊 Matches</span><strong id="matchCount">0</strong></div>
             <div class="stat-box"><span>🔄 Updates</span><strong id="updateCount">0</strong></div>
@@ -877,6 +965,9 @@
             </div>
             <div class="stat-box">
               <span>📈 Last Score</span><strong id="lastScoreTime">-</strong>
+            </div>
+            <div class="stat-box">
+              <span>🔌 Protocol</span><strong id="protocolDisplay">-</strong>
             </div>
           </div>
         </div>
@@ -887,6 +978,7 @@
         <button class="btn btn-danger" onclick="disconnectWS()">⛔ Disconnect</button>
         <button class="btn btn-success" onclick="getLiveMatches()">📡 Get Matches</button>
         <button class="btn btn-warning" onclick="forceRefresh()">🔄 Force Refresh</button>
+        <button class="btn btn-info" onclick="getWSInfo()">ℹ️ WS Info</button>
         <button class="btn btn-secondary" onclick="clearLog()">🗑️ Clear Log</button>
         <button class="btn btn-secondary" onclick="clearMatches()">🧹 Clear Matches</button>
       </div>
@@ -895,6 +987,7 @@
       <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('live')">🏏 Live Matches</button>
         <button class="tab-btn" onclick="switchTab('form')">📊 Team Form</button>
+        <button class="tab-btn" onclick="switchTab('info')">ℹ️ Connection Info</button>
       </div>
 
       <!-- Tab 1: Live Matches -->
@@ -909,6 +1002,30 @@
         </div>
       </div>
 
+      <!-- Tab 3: Connection Info -->
+      <div class="tab-content" id="tab-info">
+        <div
+          style="
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+          "
+        >
+          <h3 style="margin-bottom: 15px">🔌 Connection Details</h3>
+          <div
+            id="connectionInfo"
+            style="font-family: monospace; font-size: 0.9em; line-height: 1.8"
+          >
+            <p>Loading connection info...</p>
+          </div>
+          <div style="margin-top: 15px">
+            <button class="btn btn-info" onclick="getWSInfo()">🔄 Refresh Info</button>
+            <button class="btn btn-secondary" onclick="testConnection()">🧪 Test Connection</button>
+          </div>
+        </div>
+      </div>
+
       <div class="log-container">
         <div class="log-header">
           <h3>📋 Activity Log</h3>
@@ -919,9 +1036,26 @@
     </div>
 
     <script>
+      // ============================================================
       // ⭐ CONFIGURATION
-      const WS_URL = `ws://${window.location.host}/ws`;
+      // ============================================================
+
+      // ⭐ Auto-detect WebSocket protocol
+      function getWebSocketUrl() {
+        const isSecure =
+          window.location.protocol === 'https:' ||
+          window.location.hostname.includes('railway.app') ||
+          window.location.hostname.includes('herokuapp.com') ||
+          window.location.hostname.includes('render.com') ||
+          window.location.hostname.includes('vercel.app');
+        const protocol = isSecure ? 'wss' : 'ws';
+        const host = window.location.host;
+        return `${protocol}://${host}/ws`;
+      }
+
+      const WS_URL = getWebSocketUrl();
       const API_URL = `/api/scrape/live`;
+      const WS_INFO_URL = `/api/ws-info`;
 
       let ws = null;
       let updateCount = 0;
@@ -932,25 +1066,51 @@
       let matchCache = [];
       let lastScoreUpdate = null;
       let autoRefreshInterval = null;
+      let connectionProtocol = 'unknown';
+
+      // ============================================================
+      // ⭐ INITIALIZATION
+      // ============================================================
+
+      document.addEventListener('DOMContentLoaded', () => {
+        log('🏏 Dashboard loaded', 'info');
+        log(`🔌 WebSocket URL: ${WS_URL}`, 'info');
+
+        // Show protocol info
+        const protocol = WS_URL.startsWith('wss') ? 'wss' : 'ws';
+        document.getElementById('protocolDisplay').textContent = protocol;
+        connectionProtocol = protocol;
+
+        // Auto-connect after 1 second
+        setTimeout(connectWS, 1000);
+
+        // Get initial WS info
+        setTimeout(getWSInfo, 1500);
+      });
 
       // ============================================================
       // ⭐ TAB SWITCHING
       // ============================================================
 
       function switchTab(tab) {
-        // Update tab buttons
         document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.remove('active'));
         document
           .querySelectorAll('.tab-content')
           .forEach((content) => content.classList.remove('active'));
 
-        if (tab === 'live') {
-          document.querySelector('.tab-btn:first-child').classList.add('active');
-          document.getElementById('tab-live').classList.add('active');
-        } else if (tab === 'form') {
-          document.querySelector('.tab-btn:last-child').classList.add('active');
-          document.getElementById('tab-form').classList.add('active');
-          renderTeamForm();
+        const tabMap = {
+          live: { btn: '.tab-btn:first-child', content: 'tab-live' },
+          form: { btn: '.tab-btn:nth-child(2)', content: 'tab-form' },
+          info: { btn: '.tab-btn:nth-child(3)', content: 'tab-info' },
+        };
+
+        const config = tabMap[tab];
+        if (config) {
+          document.querySelector(config.btn).classList.add('active');
+          document.getElementById(config.content).classList.add('active');
+
+          if (tab === 'form') renderTeamForm();
+          if (tab === 'info') getWSInfo();
         }
       }
 
@@ -1085,7 +1245,6 @@
 
       function renderTeamForm() {
         const container = document.getElementById('teamFormSection');
-
         if (!container) return;
 
         container.innerHTML = `
@@ -1106,7 +1265,7 @@
                     <div class="team-short-name">${team.shortName}</div>
                   </div>
                 </div>
-                
+
                 <div class="form-results">
                   ${team.form
                     .map((result, index) => {
@@ -1121,7 +1280,7 @@
                     })
                     .join('')}
                 </div>
-                
+
                 <div class="match-history">
                   ${team.matches
                     .map(
@@ -1163,33 +1322,46 @@
           return;
         }
 
-        log(`🔌 Connecting to ${WS_URL}...`, 'info');
+        if (ws && ws.readyState === WebSocket.CONNECTING) {
+          log('⏳ Connection already in progress...', 'warning');
+          return;
+        }
+
+        log(`🔌 Connecting to ${WS_URL}...`, 'connection');
+        updateStatus('connecting');
 
         try {
           ws = new WebSocket(WS_URL);
 
           ws.onopen = () => {
             log('✅ WebSocket connected!', 'success');
-            document.getElementById('status').className = 'status connected';
-            document.getElementById('status').textContent = '🟢 Connected';
+            updateStatus('connected');
             connectedSince = new Date();
             document.getElementById('connectedSince').textContent =
               connectedSince.toLocaleTimeString();
             reconnectAttempts = 0;
 
+            // Update protocol display
+            const protocol = WS_URL.startsWith('wss') ? 'wss' : 'ws';
+            document.getElementById('protocolDisplay').textContent = protocol;
+            connectionProtocol = protocol;
+
+            // Subscribe to channels
             ws.send(
               JSON.stringify({
                 type: 'subscribe',
-                payload: { topics: ['live', 'score'] },
+                payload: { topics: ['live', 'score', 'commentary'] },
               })
             );
 
+            // Request initial data
             ws.send(
               JSON.stringify({
                 type: 'getLiveMatches',
               })
             );
 
+            // Auto-refresh every 10 seconds
             if (autoRefreshInterval) clearInterval(autoRefreshInterval);
             autoRefreshInterval = setInterval(() => {
               if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1197,7 +1369,8 @@
               }
             }, 10000);
 
-            log('📡 Subscribed to live and score updates', 'info');
+            log('📡 Subscribed to live, score, and commentary updates', 'info');
+            getWSInfo();
           };
 
           ws.onmessage = (event) => {
@@ -1210,17 +1383,16 @@
             }
           };
 
-          ws.onclose = () => {
-            log('❌ WebSocket disconnected', 'error');
-            document.getElementById('status').className = 'status disconnected';
-            document.getElementById('status').textContent = '🔴 Disconnected';
+          ws.onclose = (event) => {
+            log(`❌ WebSocket disconnected (code: ${event.code})`, 'error');
+            updateStatus('disconnected');
 
             if (autoRefreshInterval) {
               clearInterval(autoRefreshInterval);
               autoRefreshInterval = null;
             }
 
-            if (reconnectAttempts < MAX_RECONNECT) {
+            if (reconnectAttempts < MAX_RECONNECT && event.code !== 1000) {
               reconnectAttempts++;
               const delay = Math.min(3000 * reconnectAttempts, 30000);
               log(
@@ -1228,6 +1400,8 @@
                 'warning'
               );
               setTimeout(connectWS, delay);
+            } else if (event.code === 1000) {
+              log('🔌 Disconnected gracefully', 'info');
             } else {
               log('❌ Max reconnect attempts reached. Please refresh.', 'error');
             }
@@ -1238,14 +1412,16 @@
           };
         } catch (error) {
           log(`❌ Connection failed: ${error.message}`, 'error');
+          updateStatus('disconnected');
         }
       }
 
       function disconnectWS() {
         if (ws) {
-          ws.close();
+          ws.close(1000, 'Client disconnected');
           ws = null;
           log('🔌 Disconnected manually', 'info');
+          updateStatus('disconnected');
           reconnectAttempts = MAX_RECONNECT;
           if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
@@ -1254,6 +1430,19 @@
         } else {
           log('⚠️ Not connected', 'warning');
         }
+      }
+
+      function updateStatus(status) {
+        const statusEl = document.getElementById('status');
+        statusEl.className = `status ${status}`;
+
+        const statusMap = {
+          connected: '🟢 Connected',
+          connecting: '🟡 Connecting...',
+          disconnected: '🔴 Disconnected',
+        };
+
+        statusEl.textContent = statusMap[status] || status;
       }
 
       // ============================================================
@@ -1265,7 +1454,11 @@
 
         switch (type) {
           case 'connection':
-            log(`✅ ${payload.message} (ID: ${payload.clientId})`, 'success');
+            log(`✅ ${payload.message} (ID: ${payload.clientId})`, 'connection');
+            if (payload.protocol) {
+              document.getElementById('protocolDisplay').textContent = payload.protocol;
+              connectionProtocol = payload.protocol;
+            }
             break;
 
           case 'live:update':
@@ -1377,6 +1570,7 @@
             break;
 
           case 'pong':
+            // Silent ping/pong
             break;
 
           case 'scrape:start':
@@ -1432,6 +1626,7 @@
               <div>No live matches currently in progress</div>
               <div style="font-size:0.8em;opacity:0.5;margin-top:10px;">
                 ${ws && ws.readyState === WebSocket.OPEN ? '🟢 Connected' : '🔴 Disconnected'}
+                ${connectionProtocol !== 'unknown' ? ` (${connectionProtocol})` : ''}
               </div>
               <div style="margin-top:10px;">
                 <button class="btn btn-warning" onclick="forceRefresh()">🔄 Check for matches</button>
@@ -1527,7 +1722,7 @@
             const reqHtml =
               requiredRuns || requiredBalls || crr || rrr
                 ? `
-              <div style="display:flex;gap:15px;font-size:0.75em;opacity:0.7;margin:5px 0;padding:5px 10px;background:rgba(0,0,0,0.2);border-radius:4px;">
+              <div style="display:flex;gap:15px;font-size:0.75em;opacity:0.7;margin:5px 0;padding:5px 10px;background:rgba(0,0,0,0.2);border-radius:4px;flex-wrap:wrap;">
                 ${requiredRuns ? `<span>🎯 ${requiredRuns}</span>` : ''}
                 ${requiredBalls ? `<span>⚾ ${requiredBalls}</span>` : ''}
                 ${crr ? `<span>📊 CRR: ${crr}</span>` : ''}
@@ -1543,9 +1738,16 @@
                 <span class="weather-item">🌡️ ${weather.temperature}°C</span>
                 ${weather.condition ? `<span class="weather-item">☁️ ${weather.condition}</span>` : ''}
                 ${weather.humidity ? `<span class="weather-item">💧 ${weather.humidity}%</span>` : ''}
+                ${weather.wind_speed ? `<span class="weather-item">💨 ${weather.wind_speed} km/h</span>` : ''}
               </div>
             `
               : '';
+
+            const toss = match.toss || {};
+            const tossHtml =
+              toss.status && toss.status !== 'Not Started'
+                ? `<div class="toss-info">🏏 ${toss.status}</div>`
+                : '';
 
             return `
               <div class="match-card" data-match-id="${matchId}">
@@ -1554,7 +1756,7 @@
                   <span class="match-status ${statusClass}">${status}</span>
                   ${updateCount > 1 ? `<span style="font-size:0.6em;opacity:0.3;">🔄 ${updateCount}</span>` : ''}
                 </div>
-                
+
                 <div class="teams">
                   <div class="team">
                     <div class="team-logo">🏏</div>
@@ -1570,13 +1772,14 @@
                     <div class="team-overs">${team2Overs}</div>
                   </div>
                 </div>
-                
+
                 ${reqHtml}
+                ${tossHtml}
                 ${batsmenHtml}
                 ${bowlerHtml}
                 ${oversHtml}
                 ${weatherHtml}
-                
+
                 <div class="match-footer">
                   <span>📍 ${venue}</span>
                   <span>🔄 ${new Date(timestamp).toLocaleTimeString()}</span>
@@ -1636,6 +1839,77 @@
       }
 
       // ============================================================
+      // ⭐ WS INFO
+      // ============================================================
+
+      function getWSInfo() {
+        fetch(WS_INFO_URL)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success) {
+              displayConnectionInfo(data.websocket);
+              log(`ℹ️ WS Info: ${data.websocket.protocol}://${data.websocket.url}`, 'info');
+            } else {
+              log(`⚠️ Failed to get WS info`, 'warning');
+            }
+          })
+          .catch((err) => log(`❌ WS Info error: ${err.message}`, 'error'));
+      }
+
+      function displayConnectionInfo(info) {
+        const container = document.getElementById('connectionInfo');
+        if (!container) return;
+
+        container.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:600px;">
+            <div><strong>Protocol:</strong></div>
+            <div style="color:#00cc88;">${info.protocol || 'unknown'}</div>
+
+            <div><strong>Secure:</strong></div>
+            <div>${info.secure ? '✅ Yes' : '❌ No'}</div>
+
+            <div><strong>URL:</strong></div>
+            <div style="word-break:break-all;">${info.url || 'N/A'}</div>
+
+            <div><strong>Path:</strong></div>
+            <div>${info.path || '/ws'}</div>
+
+            <div><strong>Connected Clients:</strong></div>
+            <div>${info.clients || 0}</div>
+
+            <div><strong>Auto-Detect:</strong></div>
+            <div>${info.autoDetect ? '✅ Enabled' : '❌ Disabled'}</div>
+
+            <div><strong>Supported Protocols:</strong></div>
+            <div>${(info.supportedProtocols || ['ws', 'wss']).join(', ')}</div>
+          </div>
+          <div style="margin-top:15px;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px;font-size:0.8em;">
+            <strong>💡 Connection Help:</strong>
+            <pre style="margin-top:5px;font-family:monospace;font-size:0.85em;color:#667eea;">
+// Auto-detect WebSocket protocol
+const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsUrl = \`\${protocol}://\${window.location.host}/ws\`;
+const ws = new WebSocket(wsUrl);
+            </pre>
+          </div>
+        `;
+      }
+
+      function testConnection() {
+        log('🧪 Testing connection...', 'info');
+        const protocol = WS_URL.startsWith('wss') ? 'wss' : 'ws';
+        log(`📡 Current protocol: ${protocol}`, 'info');
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          log('🏓 Ping sent', 'info');
+        } else {
+          log('⚠️ Not connected, attempting to connect...', 'warning');
+          connectWS();
+        }
+      }
+
+      // ============================================================
       // ⭐ LOG FUNCTIONS
       // ============================================================
 
@@ -1692,14 +1966,37 @@
 
       // Cleanup on page unload
       window.addEventListener('beforeunload', () => {
-        if (ws) ws.close();
+        if (ws) ws.close(1000, 'Page unload');
         if (autoRefreshInterval) clearInterval(autoRefreshInterval);
       });
 
-      console.log('🏏 Cricket Scraper Dashboard');
-      console.log(
-        'Commands: connectWS(), disconnectWS(), getLiveMatches(), forceRefresh(), clearLog(), clearMatches()'
-      );
+      // ============================================================
+      // ⭐ EXPOSE FUNCTIONS TO GLOBAL SCOPE
+      // ============================================================
+
+      window.connectWS = connectWS;
+      window.disconnectWS = disconnectWS;
+      window.getLiveMatches = getLiveMatches;
+      window.forceRefresh = forceRefresh;
+      window.clearLog = clearLog;
+      window.clearMatches = clearMatches;
+      window.switchTab = switchTab;
+      window.getWSInfo = getWSInfo;
+      window.testConnection = testConnection;
+
+      console.log('🏏 Cricket Scraper Dashboard v2.0');
+      console.log(`🔌 WebSocket URL: ${WS_URL}`);
+      console.log(`🔒 Protocol: ${WS_URL.startsWith('wss') ? 'wss (Secure)' : 'ws (Insecure)'}`);
+      console.log('📋 Available Commands:');
+      console.log('  connectWS()     - Connect to WebSocket');
+      console.log('  disconnectWS()  - Disconnect from WebSocket');
+      console.log('  getLiveMatches() - Fetch live matches');
+      console.log('  forceRefresh()  - Force refresh matches');
+      console.log('  getWSInfo()     - Get WebSocket connection info');
+      console.log('  testConnection() - Test WebSocket connection');
+      console.log('  clearLog()      - Clear activity log');
+      console.log('  clearMatches()  - Clear matches display');
+      console.log('  switchTab(tab)  - Switch tabs (live, form, info)');
     </script>
   </body>
 </html>
