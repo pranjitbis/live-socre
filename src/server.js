@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const WebSocket = require('ws');
 const routes = require('./api/routes');
 const logger = require('./logger');
@@ -22,6 +23,7 @@ const PORT = process.env.PORT || 3000;
 const WS_PORT = process.env.WS_PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
+const IS_HTTPS = process.env.USE_HTTPS === 'true' || false;
 
 // ============================================================
 // ENSURE DIRECTORIES EXIST
@@ -59,7 +61,7 @@ app.use(
             scriptSrc: ["'self'", "'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", 'data:', 'https:', 'wss:'],
-            connectSrc: ["'self'", 'wss:', 'ws:'],
+            connectSrc: ["'self'", 'wss:', 'ws:', 'https:', 'http:'],
           },
         }
       : false,
@@ -198,7 +200,14 @@ app.get('/', (req, res) => {
       status: 'running',
       environment: NODE_ENV,
       production: isProduction,
+      https: IS_HTTPS,
       uptime: process.uptime(),
+      websocket: {
+        protocol: IS_HTTPS ? 'wss' : 'ws',
+        path: '/ws',
+        port: PORT,
+        url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+      },
       endpoints: {
         health: '/health',
         dashboard: '/web-test',
@@ -252,15 +261,25 @@ app.get('/health', async (req, res) => {
     cacheHealth = { healthy: false, mode: 'error', error: error.message };
   }
 
+  const protocol = IS_HTTPS ? 'wss' : 'ws';
+  const wsUrl = `${protocol}://${req.get('host') || 'localhost'}/ws`;
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: NODE_ENV,
     production: isProduction,
+    https: IS_HTTPS,
     memory: process.memoryUsage(),
     version: process.version,
     pid: process.pid,
+    websocket: {
+      protocol: protocol,
+      path: '/ws',
+      url: wsUrl,
+      clients: wss ? wss.clients.size : 0,
+    },
     services: {
       database: dbHealth,
       cache: cacheHealth,
@@ -271,8 +290,9 @@ app.get('/health', async (req, res) => {
       },
       websocket: {
         enabled: true,
-        port: WS_PORT,
+        port: PORT,
         clients: wss ? wss.clients.size : 0,
+        protocol: protocol,
       },
     },
     requestId: req.requestId,
@@ -357,13 +377,45 @@ app.get('/health/cache', async (req, res) => {
 });
 
 app.get('/health/websocket', (req, res) => {
+  const protocol = IS_HTTPS ? 'wss' : 'ws';
   res.json({
     healthy: true,
     enabled: true,
-    port: WS_PORT,
+    port: PORT,
     clients: wss ? wss.clients.size : 0,
+    protocol: protocol,
+    url: `${protocol}://${req.get('host') || 'localhost'}/ws`,
     timestamp: new Date().toISOString(),
     requestId: req.requestId,
+  });
+});
+
+// ============================================================
+// ✅ WEBSOCKET INFO ENDPOINT
+// ============================================================
+
+app.get('/api/ws-info', (req, res) => {
+  const protocol = IS_HTTPS ? 'wss' : 'ws';
+  const host = req.get('host') || 'localhost';
+  const wsUrl = `${protocol}://${host}/ws`;
+
+  res.json({
+    success: true,
+    websocket: {
+      protocol: protocol,
+      url: wsUrl,
+      path: '/ws',
+      secure: IS_HTTPS,
+      clients: wss ? wss.clients.size : 0,
+      supportedProtocols: ['ws', 'wss'],
+      autoDetect: true,
+      recommendations: {
+        http: 'ws://',
+        https: 'wss://',
+      },
+      connectionHelp: `Use ${wsUrl} for WebSocket connections`,
+    },
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -381,6 +433,9 @@ app.get('/api/live', async (req, res) => {
         data: result.data || [],
         total: result.total || 0,
         timestamp: new Date().toISOString(),
+        websocket: {
+          url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+        },
       });
     } else {
       res.json({
@@ -435,6 +490,9 @@ app.post('/api/broadcast', async (req, res) => {
           clients: clientsSent,
           matches: result.data.length,
           timestamp: new Date().toISOString(),
+          websocket: {
+            url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+          },
         });
       } else {
         res.json({
@@ -466,6 +524,9 @@ app.post('/api/broadcast', async (req, res) => {
 
 app.get('/api/ws-status', (req, res) => {
   const clients = wss ? wss.clients.size : 0;
+  const protocol = IS_HTTPS ? 'wss' : 'ws';
+  const host = req.get('host') || 'localhost';
+
   res.json({
     success: true,
     websocket: {
@@ -473,6 +534,10 @@ app.get('/api/ws-status', (req, res) => {
       clients: clients,
       path: '/ws',
       port: PORT,
+      protocol: protocol,
+      url: `${protocol}://${host}/ws`,
+      secure: IS_HTTPS,
+      autoDetect: true,
     },
     timestamp: new Date().toISOString(),
   });
@@ -522,13 +587,13 @@ app.post('/api/broadcast/test', async (req, res) => {
 app.post('/api/scrape/force-release', async (req, res) => {
   try {
     scraperService.forceReleaseLock('all');
-    
+
     if (scraperService.crexScrapers && scraperService.crexScrapers.live) {
       if (typeof scraperService.crexScrapers.live.forceReleaseLock === 'function') {
         scraperService.crexScrapers.live.forceReleaseLock();
       }
     }
-    
+
     res.json({
       success: true,
       message: 'All locks released successfully',
@@ -546,7 +611,7 @@ app.post('/api/scrape/force-release', async (req, res) => {
 // WEBSOCKET SERVER
 // ============================================================
 
-const server = http.createServer(app);
+let server = null;
 let wss = null;
 const clients = new Map();
 let lastBroadcastData = null;
@@ -578,13 +643,12 @@ async function startRealTimeBroadcast() {
 
   broadcastInterval = setInterval(async () => {
     try {
-      // ⭐ Force release any stuck locks before scraping
       if (scraperService.crexScrapers && scraperService.crexScrapers.live) {
         if (typeof scraperService.crexScrapers.live.ensureLockReleased === 'function') {
           await scraperService.crexScrapers.live.ensureLockReleased();
         }
       }
-      
+
       const result = await scraperService.scrapeLive(true);
       if (
         result &&
@@ -610,7 +674,7 @@ async function startRealTimeBroadcast() {
             sent++;
           }
         });
-        
+
         if (sent > 0) {
           logger.debug(`📡 Broadcast ${result.data.length} matches to ${sent} clients`);
         }
@@ -623,6 +687,28 @@ async function startRealTimeBroadcast() {
 
 function setupWebSocket() {
   try {
+    // ⭐ Handle WebSocket upgrade with protocol detection
+    const wsOptions = {
+      path: '/ws',
+      clientTracking: true,
+      maxPayload: 10 * 1024 * 1024,
+      // Handle upgrade with protocol detection
+      handleProtocols: (protocols, request) => {
+        // Check if client requested wss or ws
+        const isSecure =
+          request.headers['x-forwarded-proto'] === 'https' ||
+          request.headers['x-forwarded-ssl'] === 'on' ||
+          IS_HTTPS;
+
+        // Return the protocol that matches
+        if (isSecure) {
+          return 'wss';
+        }
+        return 'ws';
+      },
+    };
+
+    // ⭐ Create WebSocket server attached to the HTTP server
     wss = new WebSocket.Server({
       server,
       path: '/ws',
@@ -630,22 +716,32 @@ function setupWebSocket() {
       maxPayload: 10 * 1024 * 1024,
     });
 
-    logger.info(`✅ WebSocket server initialized on ws://localhost:${PORT}/ws`);
+    logger.info(
+      `✅ WebSocket server initialized on ${IS_HTTPS ? 'wss' : 'ws'}://localhost:${PORT}/ws`
+    );
 
     wss.on('connection', (ws, req) => {
       const clientId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const ip = req.socket.remoteAddress || 'unknown';
+
+      // ⭐ Detect protocol
+      const isSecure =
+        req.headers['x-forwarded-proto'] === 'https' ||
+        req.headers['x-forwarded-ssl'] === 'on' ||
+        IS_HTTPS;
+      const protocol = isSecure ? 'wss' : 'ws';
 
       clients.set(clientId, {
         ws,
         ip,
         connectedAt: new Date(),
         subscriptions: new Set(['live']),
+        protocol: protocol,
       });
 
-      logger.info(`🔌 WebSocket client connected: ${clientId} (IP: ${ip})`);
+      logger.info(`🔌 WebSocket client connected: ${clientId} (IP: ${ip}, Protocol: ${protocol})`);
 
-      // ⭐ Send connection confirmation
+      // ⭐ Send connection confirmation with protocol info
       sendToClient(ws, {
         type: 'connection',
         data: {
@@ -654,19 +750,21 @@ function setupWebSocket() {
           message: 'Connected to Cricket Scraper WebSocket Server',
           serverTime: new Date().toISOString(),
           totalClients: wss.clients.size,
+          protocol: protocol,
+          secure: isSecure,
+          reconnect: true,
         },
       });
 
       // ⭐ Send initial data immediately
       const sendInitialData = async () => {
         try {
-          // Force release any stuck locks
           if (scraperService.crexScrapers && scraperService.crexScrapers.live) {
             if (typeof scraperService.crexScrapers.live.ensureLockReleased === 'function') {
               await scraperService.crexScrapers.live.ensureLockReleased();
             }
           }
-          
+
           const result = await scraperService.scrapeLive(true);
           if (result && result.success && result.data && result.data.length > 0) {
             sendToClient(ws, {
@@ -675,9 +773,12 @@ function setupWebSocket() {
                 matches: result.data,
                 count: result.data.length,
                 timestamp: new Date().toISOString(),
+                protocol: protocol,
               },
             });
-            logger.info(`📤 Sent initial ${result.data.length} matches to ${clientId}`);
+            logger.info(
+              `📤 Sent initial ${result.data.length} matches to ${clientId} (${protocol})`
+            );
           } else {
             sendToClient(ws, {
               type: 'live:update',
@@ -685,6 +786,7 @@ function setupWebSocket() {
                 matches: [],
                 count: 0,
                 timestamp: new Date().toISOString(),
+                protocol: protocol,
               },
             });
           }
@@ -699,7 +801,7 @@ function setupWebSocket() {
           });
         }
       };
-      
+
       // Send initial data after a small delay
       setTimeout(sendInitialData, 500);
 
@@ -762,19 +864,21 @@ async function handleWebSocketMessage(ws, clientId, data) {
     case 'ping':
       sendToClient(ws, {
         type: 'pong',
-        data: { timestamp: new Date().toISOString() },
+        data: {
+          timestamp: new Date().toISOString(),
+          protocol: client.protocol,
+        },
       });
       break;
 
     case 'getLiveMatches':
       try {
-        // Force release any stuck locks
         if (scraperService.crexScrapers && scraperService.crexScrapers.live) {
           if (typeof scraperService.crexScrapers.live.ensureLockReleased === 'function') {
             await scraperService.crexScrapers.live.ensureLockReleased();
           }
         }
-        
+
         const result = await scraperService.scrapeLive(true);
         if (result && result.success && result.data) {
           sendToClient(ws, {
@@ -816,12 +920,12 @@ async function handleWebSocketMessage(ws, clientId, data) {
             type: payload?.type || 'live',
           },
         });
-        
+
         const result = await scraperService.forceScrape({
           type: payload?.type || 'live',
           forceRefresh: true,
         });
-        
+
         if (result && result.success && result.data) {
           sendToClient(ws, {
             type: 'scrape:complete',
@@ -1014,6 +1118,16 @@ const gracefulShutdown = async (signal) => {
       await cache.closeRedis();
     }
 
+    if (server) {
+      logger.info('Closing HTTP server...');
+      await new Promise((resolve) => {
+        server.close(() => {
+          logger.info('✅ HTTP server closed');
+          resolve();
+        });
+      });
+    }
+
     logger.info('✅ Graceful shutdown completed successfully');
     clearTimeout(forceShutdownTimeout);
     process.exit(0);
@@ -1076,17 +1190,24 @@ const initializeBrowser = async () => {
 
 const startServer = () => {
   try {
+    // ⭐ Create HTTP server
+    server = http.createServer(app);
+
+    // ⭐ Setup WebSocket
     const wsInitialized = setupWebSocket();
     if (!wsInitialized) {
       logger.warn('⚠️ WebSocket server failed to initialize, continuing without WebSocket support');
     }
 
     server.listen(PORT, async () => {
+      const protocol = IS_HTTPS ? 'wss' : 'ws';
+      const wsUrl = `${protocol}://localhost:${PORT}/ws`;
+
       logger.info('='.repeat(80));
       logger.info('🏏 CRICKET SCRAPER FRAMEWORK');
       logger.info('='.repeat(80));
       logger.info(`🚀 Server running on http://localhost:${PORT}`);
-      logger.info(`🔌 WebSocket endpoint: ws://localhost:${PORT}/ws`);
+      logger.info(`🔌 WebSocket endpoint: ${wsUrl}`);
       logger.info(`📡 Real-time updates every 5 seconds`);
       logger.info(
         `🌍 Environment: ${NODE_ENV}${isProduction ? ' (PRODUCTION)' : ' (DEVELOPMENT)'}`
@@ -1094,10 +1215,12 @@ const startServer = () => {
       logger.info(`🔧 Node Version: ${process.version}`);
       logger.info(`🆔 Process ID: ${process.pid}`);
       logger.info(`💾 Memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`);
+      logger.info(`🔒 HTTPS: ${IS_HTTPS ? 'Enabled' : 'Disabled'}`);
       logger.info(`📡 Health Check: http://localhost:${PORT}/health`);
       logger.info(`📊 Dashboard: http://localhost:${PORT}/web-test`);
       logger.info(`📡 Live API: http://localhost:${PORT}/api/live`);
       logger.info(`📡 Broadcast: http://localhost:${PORT}/api/broadcast`);
+      logger.info(`📡 WebSocket Info: http://localhost:${PORT}/api/ws-info`);
       logger.info('='.repeat(80));
 
       logger.info('📋 Available Endpoints:');
@@ -1107,6 +1230,7 @@ const startServer = () => {
       logger.info(`  GET  /api/live - Live matches API`);
       logger.info(`  POST /api/broadcast - Broadcast live matches to WebSocket clients`);
       logger.info(`  GET  /api/ws-status - WebSocket status`);
+      logger.info(`  GET  /api/ws-info - WebSocket connection info`);
       logger.info(`  GET  /api/scrape/live - Scrape live matches`);
       logger.info(`  GET  /api/scrape/upcoming - Scrape upcoming matches`);
       logger.info(`  GET  /api/scrape/finished - Scrape finished matches`);
@@ -1122,6 +1246,14 @@ const startServer = () => {
       logger.info(`  live:complete - Match completed`);
       logger.info(`  match:update - Match data updated`);
       logger.info(`  score:update - Score updated`);
+      logger.info('='.repeat(80));
+
+      logger.info('🔌 WebSocket Connection:');
+      logger.info(`  Protocol: ${protocol}`);
+      logger.info(`  URL: ${wsUrl}`);
+      logger.info(
+        `  Auto-detect: Client will automatically use ${protocol} based on page protocol`
+      );
       logger.info('='.repeat(80));
 
       await initializeBrowser();
