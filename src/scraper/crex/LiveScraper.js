@@ -8,19 +8,20 @@ const path = require('path');
 const axios = require('axios');
 const browserManager = require('../browser');
 
-// Deep logging function
 const deepLog = (label, data) => {
   console.log(`\n${'═'.repeat(80)}`);
   console.log(`📊 ${label}`);
   console.log(`${'═'.repeat(80)}`);
-  console.log(util.inspect(data, {
-    depth: null,
-    colors: true,
-    compact: false,
-    maxArrayLength: null,
-    maxStringLength: null,
-    showHidden: false
-  }));
+  console.log(
+    util.inspect(data, {
+      depth: null,
+      colors: true,
+      compact: false,
+      maxArrayLength: null,
+      maxStringLength: null,
+      showHidden: false,
+    })
+  );
   console.log(`${'═'.repeat(80)}\n`);
 };
 
@@ -34,28 +35,43 @@ class LiveScraper extends BaseCrexScraper {
       merged: 0,
       errors: 0,
       weatherSuccess: 0,
-      weatherFailed: 0
+      weatherFailed: 0,
     };
-    
-    // Rate limiting
+
     this.requestDelay = 3000;
-    this.maxRetries = 3;
+    this.maxRetries = 2;
     this.browser = null;
     this.page = null;
     this.context = null;
     this.requestCount = 0;
     this.lastRequestTime = 0;
     this.isBrowserInitialized = false;
-    
-    // Browser manager
+
     this.browserManager = browserManager;
     this.useBrowserManager = true;
-    
-    // Weather caches
+
+    this.numberOfAgents = 4;
+    this.agentStaggerDelay = 2000;
+    this.matchDelay = 2000;
+    this.activeAgents = 0;
+    this.agentResults = [];
+    this.agentStats = {};
+    this.processedUrls = new Set();
+    this.scrapeStartTime = null;
+    this.agentPages = new Map();
+
+    // ⭐ IMPROVED LOCK MANAGEMENT
+    this._isScraping = false;
+    this._scrapeLockTime = null;
+    this._scrapeTimeout = null;
+    this._scrapeId = null;
+    this._scrapePromise = null;
+    this._lastScrapeTime = 0;
+    this._minScrapeInterval = 5000; // 5 seconds minimum between scrapes
+
     this.geoCache = new Map();
     this.weatherCache = new Map();
-    
-    // Weather code mapping
+
     this.weatherCodeMap = {
       0: { condition: 'Clear Sky', icon: '01d' },
       1: { condition: 'Mainly Clear', icon: '02d' },
@@ -77,75 +93,72 @@ class LiveScraper extends BaseCrexScraper {
       82: { condition: 'Heavy Rain Showers', icon: '09d' },
       95: { condition: 'Thunderstorm', icon: '11d' },
       96: { condition: 'Thunderstorm', icon: '11d' },
-      99: { condition: 'Thunderstorm', icon: '11d' }
+      99: { condition: 'Thunderstorm', icon: '11d' },
     };
-    
-    // Country mapping for team names
+
     this.countryMap = {
-      'India': 'India',
-      'England': 'England',
-      'Australia': 'Australia',
-      'Pakistan': 'Pakistan',
+      India: 'India',
+      England: 'England',
+      Australia: 'Australia',
+      Pakistan: 'Pakistan',
       'New Zealand': 'New Zealand',
       'South Africa': 'South Africa',
       'West Indies': 'West Indies',
       'Sri Lanka': 'Sri Lanka',
-      'Bangladesh': 'Bangladesh',
-      'Afghanistan': 'Afghanistan',
-      'Zimbabwe': 'Zimbabwe',
-      'Ireland': 'Ireland',
-      'Nepal': 'Nepal',
-      'Namibia': 'Namibia',
-      'Guyana': 'Guyana'
+      Bangladesh: 'Bangladesh',
+      Afghanistan: 'Afghanistan',
+      Zimbabwe: 'Zimbabwe',
+      Ireland: 'Ireland',
+      Nepal: 'Nepal',
+      Namibia: 'Namibia',
+      Guyana: 'Guyana',
     };
-    
-    // Team abbreviation to country mapping
+
     this.teamCountryMap = {
-      'PAK': 'Pakistan',
-      'WI': 'West Indies',
-      'IND': 'India',
-      'ENG': 'England',
-      'AUS': 'Australia',
-      'NZ': 'New Zealand',
-      'SA': 'South Africa',
-      'SL': 'Sri Lanka',
-      'BAN': 'Bangladesh',
-      'AFG': 'Afghanistan',
-      'ZIM': 'Zimbabwe',
-      'IRE': 'Ireland',
-      'NEP': 'Nepal',
-      'NAM': 'Namibia',
-      'GUY': 'Guyana',
-      'LANCS': 'England',
-      'LEIC': 'England',
-      'WOR': 'England',
-      'HAM': 'England',
-      'MDX': 'England',
-      'KT': 'England',
-      'LS': 'England',
-      'TR': 'England',
-      'DS': 'Sri Lanka',
-      'GG': 'Sri Lanka',
-      'Live PAK': 'Pakistan'
+      PAK: 'Pakistan',
+      WI: 'West Indies',
+      IND: 'India',
+      ENG: 'England',
+      AUS: 'Australia',
+      NZ: 'New Zealand',
+      SA: 'South Africa',
+      SL: 'Sri Lanka',
+      BAN: 'Bangladesh',
+      AFG: 'Afghanistan',
+      ZIM: 'Zimbabwe',
+      IRE: 'Ireland',
+      NEP: 'Nepal',
+      NAM: 'Namibia',
+      GUY: 'Guyana',
+      LANCS: 'England',
+      LEIC: 'England',
+      WOR: 'England',
+      HAM: 'England',
+      MDX: 'England',
+      KT: 'England',
+      LS: 'England',
+      TR: 'England',
+      DS: 'Sri Lanka',
+      GG: 'Sri Lanka',
+      'Live PAK': 'Pakistan',
     };
-    
-    // Team ID mapping
+
     this.teamIdMap = {
-      'India': 'team_ind',
-      'England': 'team_eng',
-      'Australia': 'team_aus',
-      'Pakistan': 'team_pak',
+      India: 'team_ind',
+      England: 'team_eng',
+      Australia: 'team_aus',
+      Pakistan: 'team_pak',
       'New Zealand': 'team_nz',
       'South Africa': 'team_sa',
       'West Indies': 'team_wi',
       'Sri Lanka': 'team_sl',
-      'Bangladesh': 'team_ban',
-      'Afghanistan': 'team_afg',
-      'Zimbabwe': 'team_zim',
-      'Ireland': 'team_ire',
-      'Nepal': 'team_nep',
-      'Namibia': 'team_nam',
-      'Maharani': 'team_maharani',
+      Bangladesh: 'team_ban',
+      Afghanistan: 'team_afg',
+      Zimbabwe: 'team_zim',
+      Ireland: 'team_ire',
+      Nepal: 'team_nep',
+      Namibia: 'team_nam',
+      Maharani: 'team_maharani',
       'Galle Gallants': 'team_galle',
       'Dambulla Sixers': 'team_dambulla',
       'Kandy Falcons': 'team_kandy',
@@ -160,74 +173,335 @@ class LiveScraper extends BaseCrexScraper {
       'Trent Rockets': 'team_trent_rockets',
       'Oval Invincibles': 'team_oval',
       'Northern Superchargers': 'team_northern',
-      'Worcestershire': 'team_worcs',
-      'Derbyshire': 'team_derby',
+      Worcestershire: 'team_worcs',
+      Derbyshire: 'team_derby',
       'Lahore Qalandars': 'team_lahore',
       'Perth Scorchers': 'team_perth',
       'Guyana Amazon Warriors': 'team_guyana',
       'San Francisco Unicorns': 'team_san_francisco',
       'BP-W': 'team_bp_w',
       'TR-W': 'team_tr_w',
-      'GLCS': 'team_glcs',
-      'SOM': 'team_som'
+      GLCS: 'team_glcs',
+      SOM: 'team_som',
+      ODW: 'team_odw',
+      SDS: 'team_sds',
+      'TYP-W': 'team_typ_w',
+      'DG-W': 'team_dg_w',
+      MKL: 'team_mkl',
+      CW: 'team_cw',
+      AC: 'team_ac',
+      BL: 'team_bl',
+      JS: 'team_js',
+      KK: 'team_kk',
+      SS: 'team_ss',
+      LS: 'team_ls',
+      MIL: 'team_mil',
+      PD: 'team_pd',
+      NDT: 'team_ndt',
+      RNH: 'team_rnh',
+      SR: 'team_sr',
+      SRL: 'team_srl',
+      BP: 'team_bp',
+      LBW: 'team_lbw',
+    };
+
+    this.validTeamNames = new Set([
+      'ODW',
+      'SDS',
+      'TYP-W',
+      'DG-W',
+      'MKL',
+      'CW',
+      'AC',
+      'BL',
+      'JS',
+      'KK',
+      'SS',
+      'LS',
+      'MIL',
+      'PD',
+      'NDT',
+      'RNH',
+      'SR',
+      'SRL',
+      'BP',
+      'LBW',
+      'London Spirit',
+      'MI London',
+      'Manchester Originals',
+      'Sunrisers Leeds',
+      'Birmingham Phoenix',
+      'Southern Brave',
+      'Welsh Fire',
+      'Trent Rockets',
+      'Oval Invincibles',
+      'Northern Superchargers',
+      'India',
+      'England',
+      'Australia',
+      'Pakistan',
+      'New Zealand',
+      'South Africa',
+      'West Indies',
+      'Sri Lanka',
+      'Bangladesh',
+      'Afghanistan',
+      'Zimbabwe',
+      'Ireland',
+      'Nepal',
+      'Namibia',
+      'Guyana',
+      'Jaffna Kings',
+      'Galle Gallants',
+      'Dambulla Sixers',
+      'Kandy Falcons',
+      'Colombo Kaps',
+      'Kandy Royals',
+      'Worcestershire',
+      'Derbyshire',
+      'Lahore Qalandars',
+      'Perth Scorchers',
+      'Guyana Amazon Warriors',
+      'San Francisco Unicorns',
+      'BP-W',
+      'TR-W',
+      'GLCS',
+      'SOM',
+    ]);
+
+    this.teamNameMap = {
+      'London Spirit': 'LS',
+      'MI London': 'MIL',
+      'Manchester Originals': 'MIL',
+      'Sunrisers Leeds': 'SRL',
+      'Birmingham Phoenix': 'BP',
+      'Southern Brave': 'SB',
+      'Welsh Fire': 'WF',
+      'Trent Rockets': 'TR',
+      'Oval Invincibles': 'OI',
+      'Northern Superchargers': 'NS',
     };
   }
 
-  // ============================================================
-  // GET COUNTRY FROM TEAM NAME
-  // ============================================================
+  // ⭐ IMPROVED LOCK MANAGEMENT
+  async acquireLock(scrapeId) {
+    // Check if enough time has passed since last scrape
+    const now = Date.now();
+    if (this._lastScrapeTime > 0 && now - this._lastScrapeTime < this._minScrapeInterval) {
+      logger.debug(
+        `⏳ Last scrape was ${Math.round((now - this._lastScrapeTime) / 1000)}s ago, waiting...`
+      );
+      await this.sleep(this._minScrapeInterval - (now - this._lastScrapeTime));
+    }
+
+    if (this._isScraping) {
+      const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
+      if (lockAge > 10000) {
+        // Lock is stale (>10 seconds), force release
+        logger.warn(`⚠️ Stale lock detected (${Math.round(lockAge / 1000)}s old), force releasing`);
+        this.forceReleaseLock();
+      } else {
+        logger.warn(
+          `⚠️ Scrape already in progress (lock age: ${Math.round(lockAge / 1000)}s), returning existing promise`
+        );
+        return false;
+      }
+    }
+
+    this._isScraping = true;
+    this._scrapeLockTime = Date.now();
+    this._scrapeId = scrapeId;
+    this._lastScrapeTime = Date.now();
+
+    // Safety timeout - auto-release after 25 seconds
+    if (this._scrapeTimeout) {
+      clearTimeout(this._scrapeTimeout);
+    }
+    this._scrapeTimeout = setTimeout(() => {
+      if (this._isScraping) {
+        logger.warn(`⚠️ Scrape ${this._scrapeId} timeout - force releasing lock`);
+        this.forceReleaseLock();
+      }
+    }, 25000);
+
+    return true;
+  }
+
+  forceReleaseLock() {
+    if (this._isScraping) {
+      const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
+      logger.warn(`🔓 Force releasing scrape lock (age: ${Math.round(lockAge / 1000)}s)`);
+      this._isScraping = false;
+      this._scrapeLockTime = null;
+      this._scrapeId = null;
+      if (this._scrapeTimeout) {
+        clearTimeout(this._scrapeTimeout);
+        this._scrapeTimeout = null;
+      }
+      this._scrapePromise = null;
+      return true;
+    }
+    return false;
+  }
+
+  async ensureLockReleased() {
+    if (this._isScraping) {
+      const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
+      logger.warn(`⚠️ Force releasing existing lock (age: ${Math.round(lockAge / 1000)}s)`);
+      this._isScraping = false;
+      this._scrapeLockTime = null;
+      this._scrapeId = null;
+      if (this._scrapeTimeout) {
+        clearTimeout(this._scrapeTimeout);
+        this._scrapeTimeout = null;
+      }
+      this._scrapePromise = null;
+      return true;
+    }
+    return false;
+  }
+
+  isValidTeamName(name) {
+    if (!name) return false;
+    const trimmed = name.trim();
+    if (trimmed.length < 2 || trimmed.length > 30) return false;
+
+    for (const valid of this.validTeamNames) {
+      if (trimmed === valid || trimmed.includes(valid) || valid.includes(trimmed)) {
+        return true;
+      }
+    }
+
+    if (trimmed.includes(' ') && trimmed.length > 5) {
+      const playerPatterns = [
+        /^[A-Z][a-z]+ [A-Z][a-z]+/,
+        /^[A-Z]\. [A-Z][a-z]+/,
+        /^[A-Z][a-z]+\s+[A-Z][a-z]+/,
+      ];
+      for (const pattern of playerPatterns) {
+        if (pattern.test(trimmed)) return false;
+      }
+    }
+
+    const invalidNames = [
+      'Caught Out',
+      'Innings Break',
+      'Not Started',
+      'Live',
+      'Match',
+      'Over',
+      'Wicket',
+      'Run',
+      'Ball',
+      'Striker',
+      'Bowler',
+      'Toss',
+      'Commentary',
+      'Highlights',
+      'Scorecard',
+      'Discussions',
+      'Points Table',
+      'Projected Score',
+      'Milestone',
+      'Local Time',
+      'Team 1',
+      'Team 2',
+      'LBW Out',
+    ];
+    for (const invalid of invalidNames) {
+      if (trimmed === invalid || trimmed.includes(invalid)) return false;
+    }
+
+    return true;
+  }
+
+  cleanTeamName(name) {
+    if (!name) return '';
+    let cleaned = name.trim();
+
+    cleaned = cleaned.replace(/\s+(?:Match|T20|ODI|Test|100B)$/, '');
+    cleaned = cleaned.replace(/\s+[0-9]+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B)$/, '');
+    cleaned = cleaned.replace(/\s*[-/]\s*[0-9]+$/, '');
+    cleaned = cleaned.replace(/\s*\([0-9.]+\)$/, '');
+    cleaned = cleaned.replace(/^[A-Z]\.\s*[A-Z][a-z]+/, '');
+    cleaned = cleaned.replace(/^[A-Z][a-z]+\s+[A-Z][a-z]+/, '');
+
+    for (const [fullName, shortName] of Object.entries(this.teamNameMap)) {
+      if (cleaned.includes(fullName) || fullName.includes(cleaned)) {
+        return shortName;
+      }
+    }
+
+    for (const [key, value] of Object.entries(this.teamIdMap)) {
+      if (cleaned.includes(key) || key.includes(cleaned)) {
+        return key;
+      }
+    }
+
+    if (this.isValidTeamName(cleaned)) {
+      return cleaned;
+    }
+
+    const urlMatch = cleaned.match(/([A-Z]{2,4})/);
+    if (urlMatch && this.isValidTeamName(urlMatch[1])) {
+      return urlMatch[1];
+    }
+
+    return cleaned;
+  }
+
   getCountryFromTeamName(teamName) {
     if (!teamName) return null;
-    
+
     if (this.teamCountryMap[teamName]) return this.teamCountryMap[teamName];
-    
+
     for (const [key, value] of Object.entries(this.teamCountryMap)) {
       if (teamName.includes(key) || key.includes(teamName)) {
         return value;
       }
     }
-    
+
     for (const [key, country] of Object.entries(this.countryMap)) {
       if (teamName.includes(key) || key.includes(teamName)) {
         return country;
       }
     }
-    
+
     return null;
   }
 
-  // ============================================================
-  // BUILD LOCATION CANDIDATES
-  // ============================================================
   buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
     const candidates = new Set();
-    
+
     if (venue && venue !== 'TBD' && venue.length > 2) {
       candidates.add(venue);
-      
+
       const cleanedVenue = venue
-        .replace(/Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi, '')
+        .replace(
+          /Cricket Ground|Ground|Stadium|International Stadium|Sports Complex|Oval|Arena|Park|Gardens|Cricket Club|CC/gi,
+          ''
+        )
         .replace(/\s+/g, ' ')
         .trim();
       if (cleanedVenue !== venue && cleanedVenue.length > 2) {
         candidates.add(cleanedVenue);
       }
-      
+
       if (venue.includes(',')) {
-        const parts = venue.split(',').map(p => p.trim());
-        parts.forEach(part => {
+        const parts = venue.split(',').map((p) => p.trim());
+        parts.forEach((part) => {
           if (part.length > 2) {
             candidates.add(part);
           }
         });
       }
-      
+
       const cityMatch = venue.match(/,?\s*([A-Za-z\s]+)$/);
       if (cityMatch && cityMatch[1] && cityMatch[1].length > 2) {
         candidates.add(cityMatch[1].trim());
       }
     }
-    
+
     if (matchUrl) {
       const urlParts = matchUrl.split('/');
       for (const part of urlParts) {
@@ -237,25 +511,27 @@ class LiveScraper extends BaseCrexScraper {
             candidates.add(country);
           }
         }
-        const locationMatch = decoded.match(/(england|australia|india|pakistan|sri lanka|west indies|new zealand|south africa|bangladesh|afghanistan|zimbabwe|ireland|nepal|namibia|guyana)/i);
+        const locationMatch = decoded.match(
+          /(england|australia|india|pakistan|sri lanka|west indies|new zealand|south africa|bangladesh|afghanistan|zimbabwe|ireland|nepal|namibia|guyana)/i
+        );
         if (locationMatch) {
           candidates.add(locationMatch[1]);
         }
       }
     }
-    
+
     if (series) {
       for (const [country] of Object.entries(this.countryMap)) {
         if (series.includes(country)) {
           candidates.add(country);
         }
       }
-      
+
       const countryPatterns = [
         /(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)\s+(?:Tour|vs|in)/i,
-        /(?:Tour|vs|in)\s+(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)/i
+        /(?:Tour|vs|in)\s+(?:India|England|Australia|Pakistan|New Zealand|South Africa|West Indies|Sri Lanka|Bangladesh|Afghanistan|Zimbabwe|Ireland|Nepal|Namibia|Guyana)/i,
       ];
-      
+
       for (const pattern of countryPatterns) {
         const match = series.match(pattern);
         if (match) {
@@ -265,7 +541,7 @@ class LiveScraper extends BaseCrexScraper {
           }
         }
       }
-      
+
       const vsMatch = series.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
       if (vsMatch) {
         const country1 = vsMatch[1].trim();
@@ -274,7 +550,7 @@ class LiveScraper extends BaseCrexScraper {
         if (country2 && country2.length > 2) candidates.add(country2);
       }
     }
-    
+
     if (matchTitle) {
       for (const [country] of Object.entries(this.countryMap)) {
         if (matchTitle.includes(country)) {
@@ -282,7 +558,7 @@ class LiveScraper extends BaseCrexScraper {
         }
       }
     }
-    
+
     if (team1Name) {
       for (const [key, country] of Object.entries(this.countryMap)) {
         if (team1Name.includes(key) || key.includes(team1Name)) {
@@ -292,7 +568,7 @@ class LiveScraper extends BaseCrexScraper {
       const teamCountry = this.getCountryFromTeamName(team1Name);
       if (teamCountry) candidates.add(teamCountry);
     }
-    
+
     if (team2Name) {
       for (const [key, country] of Object.entries(this.countryMap)) {
         if (team2Name.includes(key) || key.includes(team2Name)) {
@@ -302,17 +578,17 @@ class LiveScraper extends BaseCrexScraper {
       const teamCountry = this.getCountryFromTeamName(team2Name);
       if (teamCountry) candidates.add(teamCountry);
     }
-    
+
     if (team1Name && team1Name.length <= 3) {
       const country = this.teamCountryMap[team1Name.toUpperCase()];
       if (country) candidates.add(country);
     }
-    
+
     if (team2Name && team2Name.length <= 3) {
       const country = this.teamCountryMap[team2Name.toUpperCase()];
       if (country) candidates.add(country);
     }
-    
+
     const validCandidates = new Set();
     for (const candidate of candidates) {
       const trimmed = candidate.trim();
@@ -320,19 +596,17 @@ class LiveScraper extends BaseCrexScraper {
         validCandidates.add(trimmed);
       }
     }
-    
-    const prioritized = [];
+
     const venueCandidates = [];
     const cityCandidates = [];
     const seriesCandidates = [];
     const countryCandidates = [];
-    
+
     for (const candidate of validCandidates) {
-      const isCountry = Object.values(this.countryMap).some(c => 
-        candidate.toLowerCase() === c.toLowerCase() || 
-        candidate.includes(c)
+      const isCountry = Object.values(this.countryMap).some(
+        (c) => candidate.toLowerCase() === c.toLowerCase() || candidate.includes(c)
       );
-      
+
       if (isCountry && candidate.length <= 20) {
         countryCandidates.push(candidate);
       } else if (candidate.includes(',')) {
@@ -345,14 +619,14 @@ class LiveScraper extends BaseCrexScraper {
         seriesCandidates.push(candidate);
       }
     }
-    
+
     const allCandidates = [
       ...venueCandidates,
       ...cityCandidates,
       ...seriesCandidates,
-      ...countryCandidates
+      ...countryCandidates,
     ];
-    
+
     const seen = new Set();
     const uniqueCandidates = [];
     for (const candidate of allCandidates) {
@@ -362,7 +636,7 @@ class LiveScraper extends BaseCrexScraper {
         uniqueCandidates.push(candidate);
       }
     }
-    
+
     if (uniqueCandidates.length === 0) {
       if (team1Name) {
         const country = this.getCountryFromTeamName(team1Name);
@@ -373,16 +647,13 @@ class LiveScraper extends BaseCrexScraper {
         if (country && !uniqueCandidates.includes(country)) uniqueCandidates.push(country);
       }
     }
-    
+
     return uniqueCandidates;
   }
 
-  // ============================================================
-  // GET COORDINATES WITH CACHING
-  // ============================================================
   async getCoordinates(location) {
     const cacheKey = location.toLowerCase().trim();
-    
+
     if (this.geoCache.has(cacheKey)) {
       logger.debug(`    ✅ Coordinates from cache for: ${location}`);
       return this.geoCache.get(cacheKey);
@@ -390,18 +661,18 @@ class LiveScraper extends BaseCrexScraper {
 
     try {
       const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-      
+
       const response = await axios.get(geocodeUrl, {
-        timeout: 10000
+        timeout: 10000,
       });
-      
+
       if (response.data.results && response.data.results.length > 0) {
         const result = response.data.results[0];
         const coords = {
           lat: result.latitude,
           lon: result.longitude,
           name: result.name,
-          country: result.country
+          country: result.country,
         };
         this.geoCache.set(cacheKey, coords);
         logger.debug(`    ✅ Geocoded "${location}" → ${result.name}, ${result.country}`);
@@ -416,12 +687,16 @@ class LiveScraper extends BaseCrexScraper {
     }
   }
 
-  // ============================================================
-  // GET WEATHER FOR VENUE
-  // ============================================================
   async getWeatherForVenue(venue, series, matchTitle, team1Name, team2Name, matchUrl) {
-    const candidates = this.buildLocationCandidates(venue, series, matchTitle, team1Name, team2Name, matchUrl);
-    
+    const candidates = this.buildLocationCandidates(
+      venue,
+      series,
+      matchTitle,
+      team1Name,
+      team2Name,
+      matchUrl
+    );
+
     if (candidates.length === 0) {
       logger.warn(`    ❌ No location candidates found for weather`);
       return null;
@@ -438,10 +713,10 @@ class LiveScraper extends BaseCrexScraper {
     for (let i = 0; i < candidates.length; i++) {
       const location = candidates[i];
       logger.debug(`    🔍 Trying location ${i + 1}/${candidates.length}: "${location}"`);
-      
+
       try {
         const coords = await this.getCoordinates(location);
-        
+
         if (!coords) {
           logger.debug(`    ⚠️ No coordinates for "${location}", trying next`);
           continue;
@@ -450,13 +725,13 @@ class LiveScraper extends BaseCrexScraper {
         const { lat: latitude, lon: longitude } = coords;
 
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=precipitation_probability_max&timezone=auto`;
-        
+
         const weatherResponse = await axios.get(weatherUrl, {
-          timeout: 10000
+          timeout: 10000,
         });
 
         const data = weatherResponse.data;
-        
+
         if (!data.current) {
           logger.debug(`    ⚠️ No weather data for "${location}", trying next`);
           continue;
@@ -464,10 +739,17 @@ class LiveScraper extends BaseCrexScraper {
 
         const current = data.current;
         const weatherCode = current.weather_code;
-        const weatherInfo = this.weatherCodeMap[weatherCode] || { condition: 'Unknown', icon: '01d' };
-        
+        const weatherInfo = this.weatherCodeMap[weatherCode] || {
+          condition: 'Unknown',
+          icon: '01d',
+        };
+
         let rainProbability = null;
-        if (data.daily && data.daily.precipitation_probability_max && data.daily.precipitation_probability_max.length > 0) {
+        if (
+          data.daily &&
+          data.daily.precipitation_probability_max &&
+          data.daily.precipitation_probability_max.length > 0
+        ) {
           rainProbability = data.daily.precipitation_probability_max[0];
         }
 
@@ -479,15 +761,18 @@ class LiveScraper extends BaseCrexScraper {
           condition: weatherInfo.condition,
           rain_probability: rainProbability,
           weather_icon: weatherInfo.icon,
-          last_updated: new Date().toISOString()
+          last_updated: new Date().toISOString(),
         };
 
         this.stats.weatherSuccess++;
-        
-        logger.info(`    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`);
-        logger.info(`       (Original venue: "${venue || 'N/A'}", Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'})`);
-        return weather;
 
+        logger.info(
+          `    ✅ Weather fetched for "${location}": ${weather.temperature}°C, ${weather.condition}, ${weather.humidity}% humidity`
+        );
+        logger.info(
+          `       (Original venue: "${venue || 'N/A'}", Teams: ${team1Name || 'N/A'} vs ${team2Name || 'N/A'})`
+        );
+        return weather;
       } catch (error) {
         logger.debug(`    ❌ Weather API error for "${location}": ${error.message}`);
         continue;
@@ -502,267 +787,98 @@ class LiveScraper extends BaseCrexScraper {
     return null;
   }
 
-  // ============================================================
-  // SLEEP WITH RATE LIMITING
-  // ============================================================
   async sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // ============================================================
-  // OVERRIDE: INITIALIZE BROWSER WITH MANAGER
-  // ============================================================
+  getRandomUserAgent() {
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/107.0.0.0',
+    ];
+    return userAgents[Math.floor(Math.random() * userAgents.length)];
+  }
+
   async initializeBrowser() {
     try {
-      if (this.isBrowserInitialized && this.browser && this.browser.isConnected()) {
-        logger.debug('Browser already initialized, reusing...');
+      if (
+        this.browserManager.isReady &&
+        this.browserManager.browser &&
+        this.browserManager.browser.isConnected()
+      ) {
+        this.browser = this.browserManager.browser;
+        this.context = this.browserManager.context;
+
+        if (!this.page || this.page.isClosed()) {
+          this.page = await this.context.newPage();
+          this.page.setDefaultTimeout(60000);
+          this.page.setDefaultNavigationTimeout(60000);
+        }
+
+        this.isBrowserInitialized = true;
         return true;
       }
 
-      // Use the shared browser manager
-      logger.info('🔄 Using shared browser manager...');
       await this.browserManager.launch();
-      
-      // Get the browser and context from the manager
+
       this.browser = this.browserManager.browser;
       this.context = this.browserManager.context;
-      
-      // Create a new page for this scraper instance
-      if (this.context) {
-        this.page = await this.context.newPage();
-        this.page.setDefaultTimeout(45000);
-        this.page.setDefaultNavigationTimeout(45000);
-      }
-      
+
+      this.page = await this.context.newPage();
+      this.page.setDefaultTimeout(60000);
+      this.page.setDefaultNavigationTimeout(60000);
+
       this.isBrowserInitialized = true;
       logger.info('✅ Browser initialized via shared manager');
       return true;
-      
     } catch (error) {
       logger.error(`Failed to initialize browser: ${error.message}`);
-      // Fallback to creating our own browser
-      logger.info('⚠️ Falling back to standalone browser...');
-      return await super.initializeBrowser();
+      return false;
     }
   }
 
-  // ============================================================
-  // OVERRIDE: CLOSE BROWSER
-  // ============================================================
   async closeBrowser() {
     try {
-      // Only close our page, not the shared browser
+      for (const [agentId, page] of this.agentPages) {
+        try {
+          if (page && !page.isClosed()) {
+            await page.close();
+          }
+        } catch (e) {}
+      }
+      this.agentPages.clear();
+
       if (this.page && !this.page.isClosed()) {
         await this.page.close();
         this.page = null;
       }
+
       this.isBrowserInitialized = false;
-      logger.info('✅ LiveScraper page closed');
+      logger.info('✅ LiveScraper pages closed');
       return true;
     } catch (error) {
-      logger.error(`Error closing page: ${error.message}`);
+      logger.error(`Error closing pages: ${error.message}`);
       this.page = null;
       this.isBrowserInitialized = false;
       return false;
     }
   }
 
-  // ============================================================
-  // OVERRIDE: NAVIGATE WITH RETRY AND RATE LIMITING
-  // ============================================================
-  async navigateWithRetry(url, options = {}) {
-    const maxRetries = options.maxRetries || this.maxRetries;
-    const delay = options.delay || this.requestDelay;
-    
-    // Ensure browser is initialized
-    if (!this.isBrowserInitialized || !this.page) {
-      await this.initializeBrowser();
-    }
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        // Rate limiting
-        const now = Date.now();
-        const timeSinceLastRequest = now - this.lastRequestTime;
-        if (timeSinceLastRequest < 2000) {
-          const waitTime = 2000 - timeSinceLastRequest + Math.random() * 1000;
-          logger.debug(`Rate limiting: waiting ${waitTime}ms`);
-          await this.sleep(waitTime);
-        }
-        
-        this.lastRequestTime = Date.now();
-        this.requestCount++;
-        
-        if (attempt > 1) {
-          logger.info(`   ⏳ Rate limiting: waiting ${delay * attempt}ms before retry ${attempt}/${maxRetries}`);
-          await this.sleep(delay * attempt);
-        }
-        
-        // Random referrer
-        const referrers = [
-          'https://www.google.com/',
-          'https://www.bing.com/',
-          'https://www.yahoo.com/',
-          'https://duckduckgo.com/'
-        ];
-        
-        await this.page.setExtraHTTPHeaders({
-          'Referer': referrers[Math.floor(Math.random() * referrers.length)]
-        });
-        
-        // Rotate user agent if using browser manager
-        if (this.useBrowserManager && this.browserManager) {
-          const newUA = this.browserManager.getRandomUserAgent();
-          await this.context.setExtraHTTPHeaders({
-            'User-Agent': newUA
-          });
-        }
-        
-        const response = await this.page.goto(url, {
-          waitUntil: options.waitUntil || 'domcontentloaded',
-          timeout: options.timeout || 30000
-        });
-        
-        if (response && response.status() === 403) {
-          logger.warn(`   ⚠️ Received 403 Forbidden, attempt ${attempt}/${maxRetries}`);
-          
-          // Rotate user agent on 403
-          if (this.useBrowserManager && this.browserManager) {
-            const newUA = this.browserManager.getRandomUserAgent();
-            await this.context.setExtraHTTPHeaders({
-              'User-Agent': newUA
-            });
-            logger.info(`   🔄 Rotated User-Agent: ${newUA}`);
-          }
-          
-          // Try rotating proxy if available
-          if (this.browserManager && this.browserManager.getNextProxy) {
-            const proxy = this.browserManager.getNextProxy();
-            if (proxy) {
-              logger.info(`   🔄 Rotating to proxy: ${proxy}`);
-              await this.closeBrowser();
-              await this.initializeBrowser();
-            }
-          }
-          
-          // Wait longer before retry on 403
-          const waitTime = (delay * attempt * 2) + Math.random() * 2000;
-          logger.info(`   ⏳ Waiting ${waitTime}ms before retry...`);
-          await this.sleep(waitTime);
-          
-          if (attempt === maxRetries) {
-            throw new Error(`Failed after ${maxRetries} attempts: 403 Forbidden`);
-          }
-          continue;
-        }
-        
-        if (response && response.status() >= 400) {
-          logger.warn(`   ⚠️ Received status ${response.status()}, attempt ${attempt}/${maxRetries}`);
-          if (attempt === maxRetries) {
-            throw new Error(`Failed after ${maxRetries} attempts: status ${response.status()}`);
-          }
-          await this.sleep(delay * attempt);
-          continue;
-        }
-        
-        // Wait for page to be interactive
-        await this.page.waitForLoadState('domcontentloaded');
-        await this.sleep(1000);
-        
-        // Check for consent
-        try {
-          const bodyText = await this.page.textContent('body');
-          if (bodyText && (bodyText.includes('cookie') || bodyText.includes('Consent') || bodyText.includes('GDPR'))) {
-            await this.acceptConsent();
-          }
-        } catch (e) {
-          // Ignore consent errors
-        }
-        
-        return response;
-        
-      } catch (error) {
-        logger.warn(`   ⚠️ Navigation attempt ${attempt}/${maxRetries} failed: ${error.message}`);
-        
-        // If browser issue, restart
-        if (error.message.includes('browser') || 
-            error.message.includes('disconnected') ||
-            error.message.includes('closed')) {
-          await this.closeBrowser();
-          await this.initializeBrowser();
-        }
-        
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        await this.sleep(delay * attempt + Math.random() * 2000);
-      }
-    }
-    
-    throw new Error(`Failed to navigate after ${maxRetries} attempts`);
-  }
-
-  // ============================================================
-  // ACCEPT CONSENT
-  // ============================================================
-  async acceptConsent() {
-    try {
-      const selectors = [
-        '#onetrust-accept-btn-handler',
-        '#onetrust-close-btn-container button',
-        '.onetrust-close-btn-handler',
-        '#accept-recommended-btn-handler',
-        '.btn-primary',
-        '.cookie-accept',
-        '.accept-cookies',
-        'button:contains("Accept")',
-        'button:contains("Accept All")',
-      ];
-      
-      for (const selector of selectors) {
-        try {
-          const element = await this.page.$(selector);
-          if (element && await element.isVisible()) {
-            await element.click();
-            logger.info('✅ Accepted consent');
-            await this.sleep(1000);
-            return true;
-          }
-        } catch (e) {
-          // Continue
-        }
-      }
-      
-      // Try JavaScript click
-      await this.page.evaluate(() => {
-        const buttons = document.querySelectorAll('button, [role="button"]');
-        for (const btn of buttons) {
-          const text = (btn.textContent || '').toLowerCase();
-          if (text.includes('accept') || text.includes('allow') || text.includes('agree')) {
-            btn.click();
-            return true;
-          }
-        }
-        return false;
-      });
-      
-      return false;
-    } catch (error) {
-      logger.warn('Consent acceptance failed:', error.message);
-      return false;
-    }
-  }
-
-  // ============================================================
-  // CLEANUP
-  // ============================================================
   async cleanup() {
     try {
-      if (this.page && !this.page.isClosed()) {
-        await this.page.close();
-      }
-      this.page = null;
-      this.isBrowserInitialized = false;
+      await this.closeBrowser();
+      this.processedUrls.clear();
+      this.agentResults = [];
+      this.agentStats = {};
+      this.activeAgents = 0;
+      this.agentPages.clear();
+      this.forceReleaseLock();
       logger.info('✅ LiveScraper cleaned up');
       return true;
     } catch (error) {
@@ -771,166 +887,1640 @@ class LiveScraper extends BaseCrexScraper {
     }
   }
 
-  // ============================================================
-  // MAIN SCRAPE METHOD
-  // ============================================================
-  async scrapeLive() {
-    logger.info('🚀 Starting live matches scraper');
+  splitIntoBatches(matches) {
+    const batches = [];
+    const total = matches.length;
+    const batchSize = Math.ceil(total / this.numberOfAgents);
+
+    for (let i = 0; i < this.numberOfAgents; i++) {
+      const start = i * batchSize;
+      const end = Math.min(start + batchSize, total);
+
+      if (start < total) {
+        batches.push(matches.slice(start, end));
+      } else {
+        batches.push([]);
+      }
+    }
+
+    return batches;
+  }
+
+  async runAgent(agentNum, batch) {
+    const agentId = `Agent ${agentNum}`;
+    const stats = {
+      total: batch.length,
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      startTime: Date.now(),
+    };
+
+    this.agentStats[agentId] = stats;
+    const results = [];
 
     try {
-      // Initialize browser once
-      await this.initializeBrowser();
-      
-      // Phase 1: Discover matches
-      const discoveredMatches = await this.discoverLiveMatches();
-      this.stats.discovered = discoveredMatches.length;
-      
-      if (discoveredMatches.length === 0) {
-        logger.info('📢 No live matches currently in progress');
-        await this.closeBrowser();
-        const result = {
-          success: false,
-          timestamp: new Date().toISOString(),
-          data: []
-        };
-        deepLog('SCRAPER RESULT - No live matches found', result);
-        return result;
+      if (!this.browserManager.isReady) {
+        await this.browserManager.launch();
       }
 
-      logger.info(`📋 Phase 1 complete: Discovered ${discoveredMatches.length} live matches`);
-      deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
+      if (!this.browserManager.context) {
+        logger.error(`❌ ${agentId} failed: No browser context`);
+        return { agentId, matches: [], stats };
+      }
 
-      // Phase 2: Extract details with rate limiting
-      const fullMatches = [];
-      for (let i = 0; i < discoveredMatches.length; i++) {
-        const match = discoveredMatches[i];
-        
-        // Rate limiting between matches
-        if (i > 0) {
-          logger.info(`   ⏳ Waiting ${this.requestDelay}ms before next match...`);
-          await this.sleep(this.requestDelay);
+      const page = await this.browserManager.context.newPage();
+      page.setDefaultTimeout(45000);
+      page.setDefaultNavigationTimeout(45000);
+      this.agentPages.set(agentId, page);
+
+      const userAgent = this.getRandomUserAgent();
+      await page.setExtraHTTPHeaders({
+        'User-Agent': userAgent,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        Referer: 'https://crex.com/',
+      });
+
+      this.activeAgents = (this.activeAgents || 0) + 1;
+
+      for (let i = 0; i < batch.length; i++) {
+        const match = batch[i];
+
+        const urlKey = match.url.split('?')[0];
+        if (this.processedUrls.has(urlKey)) {
+          logger.info(`   ⏭️ ${agentId} skipping duplicate: ${match.url}`);
+          continue;
         }
-        
+        this.processedUrls.add(urlKey);
+
+        stats.processed++;
+        logger.info(`   ${agentId} processing: ${match.team1.name} vs ${match.team2.name}`);
+
         try {
-          logger.info(`  📄 Processing match ${i + 1}/${discoveredMatches.length}: ${match.url}`);
-          
-          // Navigate with retry
-          await this.navigateWithRetry(match.url, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000,
-            maxRetries: this.maxRetries,
-            delay: this.requestDelay
-          });
-          
-          await this.sleep(2000);
-          
-          // Extract data
-          const matchData = await this.extractMatchDetails(match);
+          const matchData = await this.getRealTimeMatchData(page, match, agentId);
+
           if (matchData) {
-            fullMatches.push(matchData);
-            this.stats.detailed++;
-            
-            logger.info(`    ✅ Extracted: ${matchData.teams.home.name} vs ${matchData.teams.away.name}`);
-            logger.info(`       Score: ${matchData.scoreboard.batting_team.score || 'N/A'}`);
-            logger.info(`       Overs: ${matchData.scoreboard.batting_team.overs || 'N/A'}`);
+            results.push(matchData);
+            stats.succeeded++;
+            logger.info(`   ✅ ${agentId} got data for ${match.team1.name} vs ${match.team2.name}`);
+          } else {
+            stats.failed++;
+            const fallbackMatch = this.createFallbackMatch(match);
+            results.push(fallbackMatch);
           }
         } catch (error) {
-          logger.error(`    ❌ Error processing match ${i + 1}: ${error.message}`);
-          this.stats.errors++;
-          
-          // Create fallback match
+          stats.failed++;
+          logger.error(
+            `   ❌ ${agentId} error on ${match.team1.name} vs ${match.team2.name}: ${error.message}`
+          );
           const fallbackMatch = this.createFallbackMatch(match);
-          fullMatches.push(fallbackMatch);
-          deepLog(`PHASE 2 - Match ${i + 1} FALLBACK Data`, fallbackMatch);
+          results.push(fallbackMatch);
+        }
+
+        if (i < batch.length - 1) {
+          const delay = this.matchDelay + Math.random() * 500;
+          logger.info(`   ⏳ ${agentId} waiting ${Math.round(delay)}ms before next match...`);
+          await this.sleep(delay);
         }
       }
 
-      logger.info(`📋 Phase 2 complete: Extracted details for ${fullMatches.length} live matches`);
+      try {
+        if (page && !page.isClosed()) {
+          await page.close();
+        }
+        this.agentPages.delete(agentId);
+      } catch (e) {}
 
-      // Close browser after all extraction is done
-      await this.closeBrowser();
-      this.logStatistics();
+      this.activeAgents = Math.max(0, (this.activeAgents || 1) - 1);
+    } catch (error) {
+      logger.error(`❌ ${agentId} crashed: ${error.message}`);
+      try {
+        const page = this.agentPages.get(agentId);
+        if (page && !page.isClosed()) {
+          await page.close();
+        }
+        this.agentPages.delete(agentId);
+      } catch (e) {}
+      this.activeAgents = Math.max(0, (this.activeAgents || 1) - 1);
+    }
 
-      const result = {
-        success: true,
-        timestamp: new Date().toISOString(),
-        data: fullMatches
-      };
+    return {
+      agentId,
+      matches: results,
+      stats,
+    };
+  }
 
-      deepLog('✅ FINAL SCRAPER RESULT - Complete JSON', result);
-      
-      if (fullMatches.length > 0) {
-        deepLog('📋 SAMPLE LIVE MATCH - First match in detail', fullMatches[0]);
+  async getRealTimeMatchData(page, match, agentId) {
+    try {
+      let url = match.url;
+
+      if (url.includes('/match-details')) {
+        url = url.replace('/match-details', '');
       }
 
-      return result;
+      url = url.includes('?') ? `${url}&_=${Date.now()}` : `${url}?_=${Date.now()}`;
 
+      logger.info(`   📡 ${agentId} fetching: ${url}`);
+
+      try {
+        await page.goto(url, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
+
+        const postLoadDelay = 1000 + Math.random() * 1000;
+        await this.sleep(postLoadDelay);
+      } catch (navError) {
+        logger.warn(`   ⚠️ ${agentId} navigation timeout, using fallback`);
+        return this.createFallbackMatch(match);
+      }
+
+      try {
+        await page.waitForSelector('.team-1, .team-2, .runs.f-runs, .live-score-card', {
+          timeout: 8000,
+        });
+      } catch (e) {
+        logger.warn(`   ⚠️ ${agentId} no match content found, using fallback`);
+        return this.createFallbackMatch(match);
+      }
+
+      await this.sleep(1000);
+
+      const matchData = await this.extractMatchDetailsForAgent(page, match);
+
+      if (!matchData || !matchData.teams?.home?.name) {
+        logger.warn(`   ⚠️ ${agentId} invalid match data, using fallback`);
+        return this.createFallbackMatch(match);
+      }
+
+      if (matchData.venue?.name) {
+        try {
+          const weather = await this.getWeatherForVenue(
+            matchData.venue.name,
+            matchData.series?.name || '',
+            '',
+            matchData.teams.home.name,
+            matchData.teams.away.name,
+            match.url
+          );
+          if (weather) {
+            matchData.weather = weather;
+          }
+        } catch (e) {}
+      }
+
+      return matchData;
     } catch (error) {
-      logger.error(`❌ LiveScraper error: ${error.message}`);
-      await this.closeBrowser();
-      const result = {
-        success: false,
-        timestamp: new Date().toISOString(),
-        data: []
-      };
-      deepLog('❌ SCRAPER ERROR RESULT', result);
-      return result;
+      logger.error(`   ❌ ${agentId} error: ${error.message}`);
+      return this.createFallbackMatch(match);
     }
   }
 
-  // ============================================================
-  // DISCOVER LIVE MATCHES
-  // ============================================================
+  async extractMatchDetailsForAgent(page, discovered) {
+    try {
+      const teamNames = await this.extractTeamNamesFromPage(page);
+      const series = await this.extractSeries(page);
+      const venue = await this.extractVenue(page);
+      const scoreboard = await this.extractScoreboard(page);
+      const currentBatsmen = await this.extractCurrentBatsmen(page);
+      const currentBowler = await this.extractCurrentBowler(page);
+      const overs = await this.extractOversTimeline(page);
+      const commentary = await this.extractCommentary(page);
+      const prediction = await this.extractPrediction(page);
+      const toss = await this.extractToss(page);
+      const result = await this.extractResult(page);
+
+      let format = 'T20';
+      const titleText = await this.extractTextFromSelectors(page, page, [
+        'h1',
+        '.match-title',
+        '.title',
+      ]);
+      if (titleText) {
+        if (titleText.includes('ODI')) format = 'ODI';
+        else if (titleText.includes('Test')) format = 'Test';
+        else if (titleText.includes('100B')) format = 'The Hundred';
+      }
+
+      const matchId = discovered.url.match(/\/cricket-live-score\/([A-Za-z0-9-]+)/i);
+
+      let homeTeamName = teamNames.home || scoreboard.batting_team.name || discovered.team1.name;
+      let awayTeamName = teamNames.away || scoreboard.bowling_team.name || discovered.team2.name;
+
+      homeTeamName = this.cleanTeamName(homeTeamName);
+      awayTeamName = this.cleanTeamName(awayTeamName);
+
+      if (!this.isValidTeamName(homeTeamName) || !this.isValidTeamName(awayTeamName)) {
+        const urlTeams = discovered.url.match(/\/([A-Za-z0-9-]+)-vs-([A-Za-z0-9-]+)/);
+        if (urlTeams) {
+          const t1 = urlTeams[1].toUpperCase();
+          const t2 = urlTeams[2].toUpperCase();
+          if (this.isValidTeamName(t1)) homeTeamName = t1;
+          if (this.isValidTeamName(t2)) awayTeamName = t2;
+        }
+      }
+
+      const homeShort = discovered.team1.short || homeTeamName.substring(0, 3).toUpperCase();
+      const awayShort = discovered.team2.short || awayTeamName.substring(0, 3).toUpperCase();
+
+      return {
+        match_id: matchId
+          ? matchId[1]
+          : `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        match_url: discovered.url,
+        series: {
+          id: `series_${Date.now()}`,
+          name: series || discovered.series || 'Unknown Series',
+          short_name: series ? series.substring(0, 20) : '',
+          season: new Date().getFullYear().toString(),
+        },
+        match: {
+          number: titleText
+            ? titleText.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B))/i)?.[0] || 'Match'
+            : 'Match',
+          format: format,
+          status: 'Live',
+          start_time: new Date().toISOString(),
+          current_innings: '',
+          current_ball: scoreboard.current_ball || '',
+        },
+        venue: {
+          id: `venue_${Date.now()}`,
+          name: venue || 'TBD',
+        },
+        teams: {
+          home: {
+            id: this.getTeamId(homeTeamName),
+            name: homeTeamName,
+            short_name: homeShort,
+            logo: discovered.team1.flag || '',
+          },
+          away: {
+            id: this.getTeamId(awayTeamName),
+            name: awayTeamName,
+            short_name: awayShort,
+            logo: discovered.team2.flag || '',
+          },
+        },
+        scoreboard: {
+          batting_team: {
+            name: scoreboard.batting_team.name || homeTeamName,
+            score: scoreboard.batting_team.score || discovered.team1.score || '',
+            runs: scoreboard.batting_team.runs,
+            wickets: scoreboard.batting_team.wickets,
+            overs: scoreboard.batting_team.overs || discovered.team1.overs || '',
+          },
+          bowling_team: {
+            name: scoreboard.bowling_team.name || awayTeamName,
+            score: scoreboard.bowling_team.score || discovered.team2.score || '',
+            runs: scoreboard.bowling_team.runs,
+            wickets: scoreboard.bowling_team.wickets,
+            overs: scoreboard.bowling_team.overs || discovered.team2.overs || '',
+          },
+          target: scoreboard.target,
+          required_runs: scoreboard.required_runs,
+          required_balls: scoreboard.required_balls,
+          crr: scoreboard.crr,
+          rrr: scoreboard.rrr,
+          current_ball: scoreboard.current_ball || '',
+        },
+        current_batsmen: currentBatsmen,
+        current_bowler: currentBowler,
+        overs: overs,
+        commentary: commentary,
+        prediction: prediction,
+        toss: toss,
+        result: result,
+        weather: null,
+        countdown: null,
+        _lastUpdated: new Date().toISOString(),
+        _updateCount: 1,
+      };
+    } catch (error) {
+      logger.error(`❌ Agent extract error: ${error.message}`);
+      return this.createFallbackMatch(discovered);
+    }
+  }
+
+  async extractTeamNamesFromPage(page) {
+    const teams = { home: '', away: '' };
+
+    try {
+      const headerSelectors = [
+        '.match-header .team-name',
+        '.match-title .team-name',
+        'h1 .team-name',
+        '.match-info .team-name',
+      ];
+
+      let teamNames = [];
+      for (const selector of headerSelectors) {
+        try {
+          const elements = await page.$$(selector);
+          for (const el of elements) {
+            const text = await page.evaluate((el) => el.textContent.trim(), el);
+            if (text && text.length > 0 && text.length < 30) {
+              teamNames.push(text);
+            }
+          }
+          if (teamNames.length >= 2) break;
+        } catch (e) {}
+      }
+
+      if (teamNames.length >= 2) {
+        teams.home = teamNames[0];
+        teams.away = teamNames[1];
+        return teams;
+      }
+    } catch (error) {
+      logger.debug(`Error extracting team names: ${error.message}`);
+    }
+
+    return teams;
+  }
+
+  // ⭐ FIXED: EXTRACT SCOREBOARD WITH WICKET DATA
+  async extractScoreboard(page) {
+    const scoreboard = {
+      batting_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
+      bowling_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
+      target: null,
+      required_runs: null,
+      required_balls: null,
+      crr: null,
+      rrr: null,
+      current_ball: '',
+    };
+
+    try {
+      try {
+        await page.evaluate(() => document.title);
+      } catch (e) {
+        logger.warn('⚠️ Page is closed, returning empty scoreboard');
+        return scoreboard;
+      }
+
+      const scoreSelectors = [
+        '.team-score .runs.f-runs',
+        '.runs.f-runs',
+        '.team-score .runs',
+        '.score-card .team-score',
+        '.team-innig .team-score',
+        '.live-score-card .team-score',
+      ];
+
+      let teamScores = [];
+
+      for (const selector of scoreSelectors) {
+        try {
+          const elements = await page.$$(selector);
+          if (elements && elements.length >= 2) {
+            teamScores = elements;
+            break;
+          }
+        } catch (e) {}
+      }
+
+      if (teamScores.length >= 2) {
+        for (let i = 0; i < Math.min(teamScores.length, 2); i++) {
+          const el = teamScores[i];
+          const isBatting = i === 0;
+
+          try {
+            const scoreText = await page.evaluate((element) => {
+              const runsSpan = element.querySelector(
+                '.runs.f-runs span, .runs span, span:first-child'
+              );
+              if (runsSpan) {
+                return runsSpan.textContent.trim();
+              }
+              return element.textContent.trim();
+            }, el);
+
+            let runs = null;
+            let wickets = null;
+            let score = '';
+            let overs = '';
+
+            if (scoreText) {
+              const scoreMatch = scoreText.match(/^(\d+)\s*[-/]\s*(\d+)/);
+              if (scoreMatch) {
+                runs = parseInt(scoreMatch[1]);
+                wickets = parseInt(scoreMatch[2]);
+                score = `${runs}-${wickets}`;
+                logger.debug(`   ⭐ Parsed score: ${runs}-${wickets}`);
+              } else {
+                const runMatch = scoreText.match(/^(\d+)/);
+                if (runMatch) {
+                  runs = parseInt(runMatch[1]);
+                  score = runMatch[1];
+                  wickets = 0;
+                }
+              }
+
+              const oversText = await page.evaluate((element) => {
+                const spans = element.querySelectorAll('span');
+                if (spans.length >= 2) {
+                  return spans[1].textContent.trim();
+                }
+                const text = element.textContent.trim();
+                const overMatch = text.match(/[\(\[(]?\s*(\d+\.\d+|\d+b)\s*[\)\])]?/);
+                if (overMatch) {
+                  return overMatch[1];
+                }
+                return '';
+              }, el);
+
+              if (oversText) {
+                overs = oversText.replace(/[()[\]]/g, '').trim();
+              }
+
+              let teamName = await page.evaluate((element) => {
+                const parent = element.parentElement;
+                if (parent) {
+                  const nameEl = parent.querySelector('.team-name, .name, .team-title');
+                  if (nameEl) {
+                    return nameEl.textContent.trim();
+                  }
+                }
+                return '';
+              }, el);
+
+              if (!teamName) {
+                const allText = await page.evaluate((element) => {
+                  const parent = element.closest(
+                    '.team-innig, .live-data, .team-result, .score-card'
+                  );
+                  if (parent) {
+                    return parent.textContent.trim();
+                  }
+                  return element.parentElement.textContent.trim();
+                }, el);
+
+                const shortMatch = allText.match(/\b([A-Z]{2,4})\b/);
+                if (shortMatch && this.isValidTeamName(shortMatch[1])) {
+                  teamName = shortMatch[1];
+                }
+              }
+
+              if (isBatting) {
+                scoreboard.batting_team.name = teamName || `Team ${i + 1}`;
+                scoreboard.batting_team.score = score;
+                scoreboard.batting_team.runs = runs;
+                scoreboard.batting_team.wickets = wickets !== null ? wickets : 0;
+                scoreboard.batting_team.overs = overs || '';
+                scoreboard.current_ball = overs || '';
+              } else {
+                scoreboard.bowling_team.name = teamName || `Team ${i + 1}`;
+                scoreboard.bowling_team.score = score;
+                scoreboard.bowling_team.runs = runs;
+                scoreboard.bowling_team.wickets = wickets !== null ? wickets : 0;
+                scoreboard.bowling_team.overs = overs || '';
+              }
+            }
+          } catch (error) {
+            logger.debug(`   Error extracting team ${i + 1}: ${error.message}`);
+          }
+        }
+      }
+
+      // Fallback
+      if (!scoreboard.batting_team.runs && !scoreboard.bowling_team.runs) {
+        try {
+          const liveScore = await page.$('.live-score-card, .score-card, .match-score');
+          if (liveScore) {
+            const text = await page.evaluate((el) => el.textContent.trim(), liveScore);
+            const scores = text.match(/(\d+)\s*[-/]\s*(\d+)/g);
+            if (scores && scores.length >= 2) {
+              for (let i = 0; i < Math.min(scores.length, 2); i++) {
+                const match = scores[i].match(/(\d+)\s*[-/]\s*(\d+)/);
+                if (match) {
+                  const runs = parseInt(match[1]);
+                  const wickets = parseInt(match[2]);
+                  if (i === 0) {
+                    scoreboard.batting_team.runs = runs;
+                    scoreboard.batting_team.wickets = wickets;
+                    scoreboard.batting_team.score = `${runs}-${wickets}`;
+                  } else {
+                    scoreboard.bowling_team.runs = runs;
+                    scoreboard.bowling_team.wickets = wickets;
+                    scoreboard.bowling_team.score = `${runs}-${wickets}`;
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Extract target, CRR, RRR
+      const targetSelectors = ['.target', '.match-target', '.chase-target', '.target-score'];
+      for (const sel of targetSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            const text = await page.evaluate((el) => el.textContent.trim(), el);
+            if (text) {
+              const numMatch = text.match(/(\d+)/);
+              if (numMatch) {
+                scoreboard.target = parseInt(numMatch[1]);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      const crrSelectors = ['.crr', '.current-run-rate', '.run-rate'];
+      for (const sel of crrSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            const text = await page.evaluate((el) => el.textContent.trim(), el);
+            if (text) {
+              const numMatch = text.match(/(\d+\.\d+)/);
+              if (numMatch) {
+                scoreboard.crr = parseFloat(numMatch[1]);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      const rrrSelectors = ['.rrr', '.required-run-rate', '.req-run-rate'];
+      for (const sel of rrrSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            const text = await page.evaluate((el) => el.textContent.trim(), el);
+            if (text) {
+              const numMatch = text.match(/(\d+\.\d+)/);
+              if (numMatch) {
+                scoreboard.rrr = parseFloat(numMatch[1]);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      return scoreboard;
+    } catch (error) {
+      logger.error(`Error extracting scoreboard: ${error.message}`);
+      return scoreboard;
+    }
+  }
+
+  async extractResult(page) {
+    try {
+      try {
+        await page.evaluate(() => document.title);
+      } catch (e) {
+        return null;
+      }
+
+      const resultSelectors = [
+        '.result-box .font3',
+        '.result-box span',
+        '.match-result',
+        '.result-text',
+        '[class*="result"] .font3',
+        '.team-result .result-box span',
+      ];
+
+      for (const selector of resultSelectors) {
+        try {
+          const el = await page.$(selector);
+          if (el) {
+            const text = await page.evaluate((el) => el.textContent.trim(), el);
+            if (text && text.length > 0 && text.length < 50) {
+              let result = text.trim().replace(/\s+/g, ' ');
+              logger.debug(`   Found result: ${result}`);
+              return result;
+            }
+          }
+        } catch (e) {}
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // ⭐ FIXED: EXTRACT OVERS TIMELINE WITH BALL-BY-BALL
+  async extractOversTimeline(page) {
+    const overs = [];
+
+    try {
+      try {
+        await page.evaluate(() => document.title);
+      } catch (e) {
+        return overs;
+      }
+
+      // Primary: Extract from .over-ball elements
+      try {
+        const ballData = await page.evaluate(() => {
+          const balls = [];
+          const ballElements = document.querySelectorAll('.over-ball');
+
+          ballElements.forEach((el) => {
+            const text = el.textContent.trim();
+            if (text) {
+              let value = text;
+              if (value === 'W' || value === 'w') value = 'W';
+              else if (value === 'wd') value = 'wd';
+              else if (value === 'nb') value = 'nb';
+              else if (value === '4lb') value = '4lb';
+              else if (value === '1lb') value = '1lb';
+              balls.push(value);
+            }
+          });
+
+          return balls;
+        });
+
+        if (ballData && ballData.length > 0) {
+          const font1Data = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('.font1')).map((el) =>
+              el.textContent.trim()
+            );
+          });
+
+          const font3Data = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('.font3')).map((el) =>
+              el.textContent.trim()
+            );
+          });
+
+          const ballsPerOver = 6;
+          for (let i = 0; i < ballData.length; i += ballsPerOver) {
+            const overBalls = ballData.slice(i, i + ballsPerOver);
+            if (overBalls.length > 0) {
+              const overNumber = Math.floor(i / ballsPerOver) + 1;
+
+              const ballsWithEvents = [];
+              for (let j = 0; j < overBalls.length; j++) {
+                const value = overBalls[j];
+                let event = null;
+
+                for (let k = 0; k < font1Data.length; k++) {
+                  if (font1Data[k] === value || font1Data[k].includes(value)) {
+                    if (k < font3Data.length && font3Data[k]) {
+                      event = font3Data[k];
+                    }
+                    break;
+                  }
+                }
+
+                if (!event) {
+                  event = this.getDefaultEvent(value);
+                }
+
+                const isWicket = this.isWicket(value, event);
+
+                ballsWithEvents.push({
+                  value: value,
+                  event: event,
+                  isWicket: isWicket,
+                });
+              }
+
+              overs.push({
+                over: String(overNumber),
+                balls: ballsWithEvents,
+                total: this.calculateOverTotal(overBalls),
+              });
+            }
+          }
+
+          logger.debug(`   ⭐ Extracted ${ballData.length} balls across ${overs.length} overs`);
+          return overs;
+        }
+      } catch (e) {
+        logger.debug(`   Error extracting ball-by-ball: ${e.message}`);
+      }
+
+      // Fallback: Container-based extraction
+      const containerSelectors = [
+        '.overs-timeline',
+        '.overs-slide-container',
+        '.overs-container',
+        '.overs-list',
+        '.ball-by-ball',
+      ];
+
+      for (const containerSel of containerSelectors) {
+        try {
+          const container = await page.$(containerSel);
+          if (container) {
+            const slideSelectors = ['.overs-slide', '.content', '.over-item', '.over-row'];
+            for (const slideSel of slideSelectors) {
+              const slides = await container.$$(slideSel);
+              for (const slide of slides) {
+                let overNumber = '';
+                const overSelectors = [
+                  '.over-title',
+                  '.over-number',
+                  '.title',
+                  '.header',
+                  'h4',
+                  '.over-label',
+                ];
+                for (const sel of overSelectors) {
+                  try {
+                    const el = await slide.$(sel);
+                    if (el) {
+                      const text = await page.evaluate((el) => el.textContent.trim(), el);
+                      if (text) {
+                        let match = text.match(/Over\s*(\d+)/i);
+                        if (match) {
+                          overNumber = match[1];
+                          break;
+                        }
+                        if (text.match(/^\d+$/)) {
+                          overNumber = text;
+                          break;
+                        }
+                      }
+                    }
+                  } catch (e) {}
+                }
+
+                const balls = [];
+                const ballElements = await slide.$$('.over-ball, .ball, .ml-o-b-1');
+                for (const ballEl of ballElements) {
+                  const result = await page.evaluate((el) => el.textContent.trim(), ballEl);
+                  if (result) {
+                    let cleanResult = result.trim();
+                    if (cleanResult === 'W') cleanResult = 'W';
+                    else if (cleanResult === 'wd') cleanResult = 'wd';
+                    else if (cleanResult === 'nb') cleanResult = 'nb';
+                    else if (cleanResult === '4lb') cleanResult = '4lb';
+                    else if (cleanResult === '1lb') cleanResult = '1lb';
+
+                    const eventText = await this.getBallEvent(page, ballEl);
+
+                    balls.push({
+                      value: cleanResult,
+                      event: eventText || this.getDefaultEvent(cleanResult),
+                      isWicket: this.isWicket(cleanResult, eventText),
+                    });
+                  }
+                }
+
+                let total = '';
+                const totalSelectors = ['.total', '.over-total', '.over-summary'];
+                for (const sel of totalSelectors) {
+                  try {
+                    const el = await slide.$(sel);
+                    if (el) {
+                      const text = await page.evaluate((el) => el.textContent.trim(), el);
+                      if (text) {
+                        total = text.replace(/^=\s*/, '').trim();
+                        break;
+                      }
+                    }
+                  } catch (e) {}
+                }
+
+                if (overNumber || balls.length > 0) {
+                  overs.push({
+                    over: overNumber || '',
+                    balls: balls,
+                    total: total || '',
+                  });
+                }
+              }
+              if (overs.length > 0) break;
+            }
+          }
+          if (overs.length > 0) break;
+        } catch (e) {}
+      }
+
+      return overs;
+    } catch (e) {
+      logger.error(`Error extracting overs timeline: ${e.message}`);
+      return overs;
+    }
+  }
+
+  async getBallEvent(page, ballElement) {
+    try {
+      const parent = await page.evaluate((el) => el.parentElement, ballElement);
+      if (parent) {
+        const font3 = await page.evaluate((el) => {
+          const font3El = el.querySelector('.font3');
+          if (font3El) {
+            return font3El.textContent.trim();
+          }
+          const text = el.textContent.trim();
+          const eventMatch = text.match(
+            /(caught|bowled|lbw|stumped|run out|out|six|four|single|dot)/i
+          );
+          if (eventMatch) {
+            return eventMatch[1];
+          }
+          return '';
+        }, parent);
+
+        if (font3 && font3.length > 0) {
+          return font3;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  getDefaultEvent(value) {
+    const eventMap = {
+      0: 'dot ball',
+      1: 'single',
+      2: 'double',
+      3: 'triple',
+      4: 'four',
+      6: 'six',
+      W: 'wicket',
+      wd: 'wide',
+      nb: 'no ball',
+      '4lb': 'four leg bye',
+      '1lb': 'leg bye',
+      5: 'five',
+    };
+    return eventMap[value] || `ball: ${value}`;
+  }
+
+  isWicket(value, event) {
+    if (value === 'W' || value === 'w') {
+      return true;
+    }
+
+    if (event) {
+      const wicketKeywords = ['out', 'caught', 'bowled', 'lbw', 'stumped', 'run out', 'hit wicket'];
+      const lowerEvent = event.toLowerCase();
+      for (const keyword of wicketKeywords) {
+        if (lowerEvent.includes(keyword)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  calculateOverTotal(balls) {
+    let total = 0;
+    for (const ball of balls) {
+      if (ball === '4' || ball === '4lb') total += 4;
+      else if (ball === '6') total += 6;
+      else if (ball === '1' || ball === '1lb') total += 1;
+      else if (ball === '2') total += 2;
+      else if (ball === '3') total += 3;
+      else if (ball === '5') total += 5;
+    }
+    return String(total);
+  }
+
+  async extractCurrentBatsmen(page) {
+    const batsmen = [];
+
+    try {
+      try {
+        await page.evaluate(() => document.title);
+      } catch (e) {
+        return batsmen;
+      }
+
+      try {
+        await page.waitForSelector(
+          '.batsmen-info-wrapper, .player-card-wrapper, .playing-batsmen-wrapper, .player-profile, .player-card',
+          { timeout: 5000 }
+        );
+      } catch (e) {
+        return batsmen;
+      }
+
+      const battingContainerSelectors = [
+        '.batsmen-info-wrapper',
+        '.player-active',
+        '.player-card-wrapper',
+        '.player-card',
+        '.player-profile',
+        '.playing-batsmen-wrapper',
+      ];
+
+      let container = null;
+      for (const selector of battingContainerSelectors) {
+        try {
+          const found = await page.$(selector);
+          if (found) {
+            container = found;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!container) {
+        const batsmenItems = await page.$$('.batsmen-info-wrapper, .batsman-item, .player-info');
+        if (batsmenItems.length === 0) return batsmen;
+
+        for (const item of batsmenItems) {
+          try {
+            const batsman = await this.extractBatsmanFromElement(page, item);
+            if (batsman && batsman.name) {
+              batsmen.push(batsman);
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        if (batsmen.length > 0) {
+          this.ensureStriker(batsmen);
+          return batsmen;
+        }
+
+        return batsmen;
+      }
+
+      const cardSelectors = [
+        '.batsmen-info-wrapper',
+        '.player-card-wrapper',
+        '.player-card',
+        '.player-profile',
+        '.batsman-item',
+        '.batsman',
+        '.player-info',
+      ];
+
+      let cards = [];
+      for (const selector of cardSelectors) {
+        try {
+          const found = await container.$$(selector);
+          if (found && found.length > 0) {
+            cards = found;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (cards.length === 0) {
+        const directCards = await page.$$('.batsmen-info-wrapper, .batsman-item');
+        if (directCards.length > 0) {
+          cards = directCards;
+        } else {
+          return batsmen;
+        }
+      }
+
+      for (let i = 0; i < cards.length && batsmen.length < 2; i++) {
+        const card = cards[i];
+        try {
+          const batsman = await this.extractBatsmanFromElement(page, card);
+          if (batsman && batsman.name) {
+            batsmen.push(batsman);
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+
+      this.ensureStriker(batsmen);
+
+      return batsmen;
+    } catch (error) {
+      logger.debug(`Error extracting current batsmen: ${error.message}`);
+      return batsmen;
+    }
+  }
+
+  async extractBatsmanFromElement(page, element) {
+    try {
+      let name = '';
+      let runs = '';
+      let balls = '';
+      let is_striker = false;
+
+      const nameSelectors = [
+        '.batsmen-name a p',
+        '.batsmen-name p',
+        '.batsmen-name',
+        '.player-name',
+        '.playerName',
+        '.name',
+        '.p-name',
+        'a[href*="/player/"] p',
+        'a[href*="/player/"]',
+      ];
+
+      for (const sel of nameSelectors) {
+        try {
+          const nameEl = await element.$(sel);
+          if (nameEl) {
+            const text = await page.evaluate((el) => el.textContent.trim(), nameEl);
+            if (text && text.length > 0 && text.length < 50) {
+              name = text;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (!name) return null;
+
+      const scoreSelectors = ['.batsmen-score', '.batsmen-score p', '.score', '.runs'];
+
+      for (const sel of scoreSelectors) {
+        try {
+          const scoreEl = await element.$(sel);
+          if (scoreEl) {
+            const text = await page.evaluate((el) => el.textContent.trim(), scoreEl);
+            if (text) {
+              const scoreMatch = text.match(/(\d+)\s*\(\s*(\d+)\s*\)/);
+              if (scoreMatch) {
+                runs = scoreMatch[1];
+                balls = scoreMatch[2];
+                break;
+              }
+              const numMatch = text.match(/^(\d+)$/);
+              if (numMatch) {
+                runs = numMatch[1];
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Check for striker indicator
+      try {
+        const svgSelectors = [
+          '.circle-strike-icon',
+          '.circle-strike-icon svg',
+          'svg[viewBox="0 0 12 12"]',
+          '.icon-left',
+          '.striker-indicator',
+          '[class*="strike"]',
+          '[class*="highlight"]',
+        ];
+
+        for (const sel of svgSelectors) {
+          try {
+            const svgEl = await element.$(sel);
+            if (svgEl) {
+              const isVisible = await page.evaluate((el) => {
+                const style = window.getComputedStyle(el);
+                return (
+                  style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0'
+                );
+              }, svgEl);
+
+              if (isVisible) {
+                is_striker = true;
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
+
+      return {
+        name: name,
+        runs: runs || null,
+        balls: balls || null,
+        is_striker: is_striker,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  ensureStriker(batsmen) {
+    if (batsmen.length === 0) return;
+
+    const strikers = batsmen.filter((b) => b.is_striker === true);
+    if (strikers.length === 0) {
+      batsmen[0].is_striker = true;
+    } else if (strikers.length > 1) {
+      let foundFirst = false;
+      for (const batsman of batsmen) {
+        if (batsman.is_striker) {
+          if (!foundFirst) {
+            foundFirst = true;
+          } else {
+            batsman.is_striker = false;
+          }
+        }
+      }
+    }
+  }
+
+  async extractCurrentBowler(page) {
+    const bowler = { name: '', overs: '', runs: null, wickets: null };
+
+    try {
+      try {
+        await page.evaluate(() => document.title);
+      } catch (e) {
+        return bowler;
+      }
+
+      const bowlingContainerSelectors = [
+        '.player-card-wrapper',
+        '.player-card.border',
+        '.player-profile',
+        '.bowling-card',
+        '.bowler-info',
+        '.current-bowler',
+        '.bowler-container',
+        '.player-info',
+      ];
+
+      let container = null;
+      for (const selector of bowlingContainerSelectors) {
+        try {
+          const found = await page.$(selector);
+          if (found) {
+            container = found;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!container) {
+        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
+        if (teamInnings.length >= 2) {
+          const bowlingTeam = teamInnings[1];
+          const playerCards = await bowlingTeam.$$(
+            '.player-card, .player-card-wrapper, .player-profile'
+          );
+          if (playerCards.length > 0) {
+            container = playerCards[0];
+          }
+        }
+      }
+
+      if (!container) return bowler;
+
+      const nameSelectors = [
+        '.batsmen-name',
+        '.player-name',
+        '.name',
+        '.bowler-name',
+        'a[href*="/player/"] p',
+        'a[href*="/player/"]',
+        '.p-name',
+      ];
+      for (const nameSel of nameSelectors) {
+        try {
+          const nameEl = await container.$(nameSel);
+          if (nameEl) {
+            const text = await page.evaluate((el) => el.textContent.trim(), nameEl);
+            if (text && text.length > 0 && text.length < 50) {
+              bowler.name = text;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      const figuresSelectors = [
+        '.bowling-figures',
+        '.figures',
+        '.stats',
+        '.score',
+        '.bowling-stats',
+        '.bowler-stats',
+      ];
+      for (const figSel of figuresSelectors) {
+        try {
+          const figEl = await container.$(figSel);
+          if (figEl) {
+            const text = await page.evaluate((el) => el.textContent.trim(), figEl);
+            if (text) {
+              const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
+              if (figuresMatch) {
+                bowler.wickets = parseInt(figuresMatch[1]);
+                bowler.runs = parseInt(figuresMatch[2]);
+                bowler.overs = figuresMatch[3];
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      return bowler;
+    } catch (error) {}
+    return bowler;
+  }
+
+  async extractToss(page) {
+    const toss = { status: 'Not Started' };
+    try {
+      const tossSelectors = [
+        '.toss-wrap p',
+        '.toss-wrap',
+        '[class*="toss"] p',
+        '[class*="toss"]',
+        '.match-info .toss',
+        '.toss-info',
+        '.toss-detail',
+        '.match-toss',
+      ];
+
+      for (const selector of tossSelectors) {
+        try {
+          const elements = await page.$$(selector);
+          for (const el of elements) {
+            try {
+              let text = await page.evaluate((el) => el.textContent.trim(), el);
+              if (text && text.length > 0) {
+                text = text.replace(/\s+/g, ' ').trim();
+                if (text.includes('won the toss')) {
+                  toss.status = text;
+                  return toss;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+    } catch (error) {}
+    return toss;
+  }
+
+  async extractSeries(page) {
+    const selectors = [
+      '.series-name',
+      '.snameTag',
+      '.match-series',
+      '.series-title',
+      '.tournament',
+      '.series',
+      '.match-tournament',
+      'h1',
+      '.match-header .series',
+      '.match-info .series',
+    ];
+    for (const selector of selectors) {
+      try {
+        const el = await page.$(selector);
+        if (el) {
+          const text = await page.evaluate((el) => el.textContent.trim(), el);
+          if (text && text.length > 0) {
+            return text;
+          }
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  async extractVenue(page) {
+    const selectors = [
+      '.venue',
+      '.match-venue',
+      '.venue-name',
+      '.location',
+      '.stadium',
+      '.match-location',
+      '.match-info .venue',
+      '.match-details .venue',
+      '.matchInfo',
+      '.info-row',
+      '.venue-info',
+      '.meta-info',
+      '.scorecard-header',
+    ];
+
+    for (const selector of selectors) {
+      try {
+        const elements = await page.$$(selector);
+        for (const el of elements) {
+          const text = await page.evaluate((el) => el.textContent.trim(), el);
+          if (text && text.length > 3 && !text.includes('Over') && !text.includes('wd')) {
+            return text;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return '';
+  }
+
+  async extractCommentary(page) {
+    const commentary = [];
+    const containerSelectors = [
+      '.commentary-container',
+      '.commentary-section',
+      '.commentary-list',
+      '.live-commentary',
+    ];
+    for (const containerSel of containerSelectors) {
+      try {
+        const container = await page.$(containerSel);
+        if (container) {
+          const itemSelectors = ['.commentary-item', '.comment', '.ball-commentary'];
+          for (const itemSel of itemSelectors) {
+            const items = await container.$$(itemSel);
+            for (const item of items) {
+              const ball = await this.extractTextFromSelectors(page, item, [
+                '.ball-number',
+                '.over-ball',
+                '.ball',
+              ]);
+              const result = await this.extractTextFromSelectors(page, item, [
+                '.result',
+                '.event',
+                '.ball-result',
+              ]);
+              const text = await this.extractTextFromSelectors(page, item, [
+                '.comment-text',
+                '.description',
+                '.comment',
+              ]);
+              if (ball || text || result) {
+                commentary.push({
+                  ball: ball || '',
+                  result: result || '',
+                  text: text || '',
+                });
+              }
+            }
+            if (commentary.length > 0) break;
+          }
+        }
+        if (commentary.length > 0) break;
+      } catch (e) {}
+    }
+    return commentary;
+  }
+
+  async extractPrediction(page) {
+    const prediction = {
+      home_probability: null,
+      away_probability: null,
+      projected_scores: [],
+    };
+    try {
+      const displayFlex = await page.$('.displayFlex');
+      if (displayFlex) {
+        const percentageElements = await displayFlex.$$('.percentageScreenText');
+        const percentages = [];
+        for (const el of percentageElements) {
+          const text = await page.evaluate((el) => el.textContent.trim(), el);
+          if (text) {
+            const num = parseInt(text.replace('%', ''));
+            if (!isNaN(num)) percentages.push(num);
+          }
+        }
+        if (percentages.length >= 2) {
+          prediction.home_probability = percentages[0];
+          prediction.away_probability = percentages[1];
+        }
+      }
+    } catch (error) {}
+    return prediction;
+  }
+
+  async extractTextFromSelectors(page, element, selectors) {
+    for (const selector of selectors) {
+      try {
+        const el = await element.$(selector);
+        if (el) {
+          const text = await page.evaluate((el) => el.textContent.trim(), el);
+          if (text) return text;
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  getTeamId(teamName) {
+    if (!teamName) return `team_${Date.now()}`;
+    for (const [name, id] of Object.entries(this.teamIdMap)) {
+      if (teamName.includes(name) || name.includes(teamName)) {
+        return id;
+      }
+    }
+    const cleanName = teamName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    return `team_${cleanName}`;
+  }
+
+  createFallbackMatch(discovered) {
+    return {
+      match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      match_url: discovered.url,
+      series: {
+        id: `series_${Date.now()}`,
+        name: discovered.series || 'Unknown Series',
+        short_name: '',
+        season: new Date().getFullYear().toString(),
+      },
+      match: {
+        number: 'Match',
+        format: 'T20',
+        status: 'Live',
+        start_time: '',
+        current_innings: '',
+        current_ball: '',
+      },
+      venue: {
+        id: `venue_${Date.now()}`,
+        name: 'TBD',
+      },
+      teams: {
+        home: {
+          id: this.getTeamId(discovered.team1.name),
+          name: discovered.team1.name || 'Team 1',
+          short_name: discovered.team1.short || 'T1',
+          logo: discovered.team1.flag || '',
+        },
+        away: {
+          id: this.getTeamId(discovered.team2.name),
+          name: discovered.team2.name || 'Team 2',
+          short_name: discovered.team2.short || 'T2',
+          logo: discovered.team2.flag || '',
+        },
+      },
+      scoreboard: {
+        batting_team: {
+          name: discovered.team1.name,
+          score: discovered.team1.score || '',
+          runs: null,
+          wickets: null,
+          overs: discovered.team1.overs || '',
+        },
+        bowling_team: {
+          name: discovered.team2.name,
+          score: discovered.team2.score || '',
+          runs: null,
+          wickets: null,
+          overs: discovered.team2.overs || '',
+        },
+        target: null,
+        required_runs: null,
+        required_balls: null,
+        crr: null,
+        rrr: null,
+        current_ball: '',
+      },
+      current_batsmen: [],
+      current_bowler: { name: '', overs: '', runs: null, wickets: null },
+      overs: [],
+      commentary: [],
+      prediction: { home_probability: null, away_probability: null, projected_scores: [] },
+      toss: { status: 'Not Started', winner: '', decision: '' },
+      result: null,
+      weather: null,
+      countdown: null,
+    };
+  }
+
+  async processWithAgents(discoveredMatches) {
+    logger.info('🤖 Starting Agent-based processing with 4 agents...');
+
+    if (!discoveredMatches || discoveredMatches.length === 0) {
+      return [];
+    }
+
+    if (!this.context) {
+      await this.initializeBrowser();
+      if (!this.context) {
+        logger.error('❌ Failed to get browser context');
+        return [];
+      }
+    }
+
+    const batches = this.splitIntoBatches(discoveredMatches);
+    const agentPromises = [];
+
+    for (let i = 0; i < this.numberOfAgents; i++) {
+      const agentNum = i + 1;
+      const batch = batches[i];
+
+      if (batch.length === 0) continue;
+
+      const startDelay = i * this.agentStaggerDelay;
+      logger.info(
+        `⏳ Agent ${agentNum} starting in ${startDelay}ms with ${batch.length} matches...`
+      );
+
+      const agentPromise = new Promise((resolve) => {
+        setTimeout(async () => {
+          logger.info(`🤖 Agent ${agentNum} started with ${batch.length} matches`);
+          const result = await this.runAgent(agentNum, batch);
+          resolve(result);
+        }, startDelay);
+      });
+
+      agentPromises.push(agentPromise);
+    }
+
+    const results = await Promise.all(agentPromises);
+
+    const allMatches = [];
+    results.forEach((result) => {
+      if (result && result.matches) {
+        allMatches.push(...result.matches);
+      }
+    });
+
+    logger.info(`✅ All agents completed. Total matches: ${allMatches.length}`);
+    return allMatches;
+  }
+
+  logAgentStatistics() {
+    if (Object.keys(this.agentStats).length === 0) return;
+
+    logger.info(`   🤖 Agent Stats:`);
+    for (const [agentId, stats] of Object.entries(this.agentStats)) {
+      const successRate = stats.total > 0 ? Math.round((stats.succeeded / stats.total) * 100) : 0;
+      logger.info(`      ${agentId}: ${stats.succeeded}/${stats.total} (${successRate}%)`);
+    }
+  }
+
+  logStatistics() {
+    logger.info(`📊 Live Scraper Statistics:`);
+    logger.info(`   Discovered: ${this.stats.discovered}`);
+    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
+    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
+    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
+    logger.info(`   Errors: ${this.stats.errors}`);
+  }
+
   async discoverLiveMatches() {
     logger.info('🔍 Phase 1: Discovering live matches...');
 
     const url = this.selectors.PAGE_URL || 'https://crex.com/cricket-live-score';
-    
-    try {
-      await this.navigateWithRetry(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
 
-      try {
-        await this.page.waitForSelector('.live-card, .live-score-card, .match-card, .team-innig', { 
-          timeout: 10000 
-        });
-        logger.info('✅ Found live match indicators on page');
-      } catch (e) {
-        logger.warn('⚠️ No live match indicators found, waiting for page to settle...');
-        await this.sleep(3000);
+    if (!this.isBrowserInitialized || !this.page || this.page.isClosed()) {
+      logger.warn('⚠️ Browser not initialized, initializing now...');
+      await this.initializeBrowser();
+      if (!this.page) {
+        logger.error('❌ Failed to initialize page');
+        return [];
       }
-
-      await this.sleep(3000);
-      
-      const debugDir = path.join(process.cwd(), 'debug');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
-      }
-      
-      try {
-        await this.page.screenshot({ path: path.join(debugDir, 'live-page-screenshot.png'), fullPage: true });
-        logger.info(`💾 Saved screenshot to debug/live-page-screenshot.png`);
-      } catch (e) {
-        logger.warn(`Could not save screenshot: ${e.message}`);
-      }
-
-    } catch (error) {
-      logger.error(`❌ Failed to load live matches page: ${error.message}`);
-      return [];
     }
 
     try {
-      const pageHtml = await this.page.content();
-      const debugDir = path.join(process.cwd(), 'debug');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
+      logger.info(`📡 Navigating to: ${url}`);
+
+      let navSuccess = false;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await this.page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 20000,
+          });
+          navSuccess = true;
+          break;
+        } catch (navError) {
+          logger.warn(`⚠️ Navigation attempt ${attempt} failed: ${navError.message}`);
+          if (attempt < 2) {
+            await this.sleep(2000 * attempt);
+          }
+        }
       }
-      fs.writeFileSync(path.join(debugDir, 'live-page.html'), pageHtml);
-      logger.info(`💾 Saved page HTML to debug/live-page.html for inspection`);
-    } catch (e) {
-      logger.warn(`Could not save HTML: ${e.message}`);
+
+      if (!navSuccess) {
+        logger.error('❌ Failed to navigate after 2 attempts');
+        return [];
+      }
+
+      await this.sleep(2000);
+
+      try {
+        await this.page.waitForSelector('.live-card, .match-card, .team-innig', {
+          timeout: 8000,
+        });
+      } catch (e) {
+        logger.warn('⚠️ No match indicators found, waiting for page to settle...');
+        await this.sleep(3000);
+      }
+
+      await this.sleep(1000);
+    } catch (error) {
+      logger.error(`❌ Failed to load live matches page: ${error.message}`);
+      return [];
     }
 
     const selectors = [
@@ -947,36 +2537,17 @@ class LiveScraper extends BaseCrexScraper {
       '.live-match-item',
       '.match-row',
       '.cricket-match-card',
-      '.match-card-container'
+      '.match-card-container',
     ];
 
     let foundCards = [];
 
     for (const selector of selectors) {
       try {
-        const count = await this.page.locator(selector).count();
-        logger.info(`  🔍 Checking selector "${selector}": ${count} elements found`);
-        
-        if (count > 0) {
-          foundCards = await this.page.$$(selector);
-          logger.info(`✅ Found ${count} elements with selector: ${selector}`);
-          
-          if (foundCards.length > 0) {
-            try {
-              const firstCardHtml = await this.page.evaluate((el) => el.outerHTML, foundCards[0]);
-              const snippet = firstCardHtml.substring(0, 500) + '...';
-              logger.info(`📄 First card HTML snippet: ${snippet}`);
-              
-              const debugDir = path.join(process.cwd(), 'debug');
-              if (!fs.existsSync(debugDir)) {
-                fs.mkdirSync(debugDir, { recursive: true });
-              }
-              fs.writeFileSync(path.join(debugDir, 'first-card.html'), firstCardHtml);
-              logger.info(`💾 Saved first card HTML to debug/first-card.html`);
-            } catch (e) {
-              logger.warn(`Could not save first card HTML: ${e.message}`);
-            }
-          }
+        const elements = await this.page.$$(selector);
+        if (elements && elements.length > 0) {
+          foundCards = elements;
+          logger.info(`✅ Found ${elements.length} elements with selector: ${selector}`);
           break;
         }
       } catch (error) {
@@ -989,1098 +2560,509 @@ class LiveScraper extends BaseCrexScraper {
       return [];
     }
 
-    const discoveredMatches = await this.page.evaluate((cards) => {
-      const matches = [];
-      
-      const getText = (el) => {
-        if (!el) return '';
-        return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
-      };
+    try {
+      const discoveredMatches = await this.page.evaluate((cards) => {
+        const matches = [];
+        const seenUrls = new Set();
 
-      const cleanText = (text) => {
-        if (!text) return '';
-        return text.replace(/\s+/g, ' ').trim();
-      };
-
-      const getTeamShortName = (name) => {
-        const map = {
-          'India': 'IND',
-          'England': 'ENG',
-          'Australia': 'AUS',
-          'Pakistan': 'PAK',
-          'New Zealand': 'NZ',
-          'South Africa': 'SA',
-          'West Indies': 'WI',
-          'Sri Lanka': 'SL',
-          'Bangladesh': 'BAN',
-          'Afghanistan': 'AFG',
-          'Zimbabwe': 'ZIM',
-          'Ireland': 'IRE',
-          'Nepal': 'NEP',
-          'Namibia': 'NAM',
-          'Galle Gallants': 'GAG',
-          'Dambulla Sixers': 'DAS',
-          'Kandy Falcons': 'KFS',
-          'Jaffna Kings': 'JKS',
-          'Colombo Kaps': 'CLK',
-          'Kandy Royals': 'KRL',
-          'London Spirit': 'LDN',
-          'Manchester Super Giants': 'MSG',
-          'Southern Brave': 'SOU',
-          'Welsh Fire': 'WEF',
-          'Birmingham Phoenix': 'BIR',
-          'Trent Rockets': 'TRE',
-          'Oval Invincibles': 'OVAL',
-          'Northern Superchargers': 'NOR',
-          'Worcestershire': 'WORCS',
-          'Derbyshire': 'DERBY',
-          'Lahore Qalandars': 'LQ',
-          'Perth Scorchers': 'PS',
-          'Guyana Amazon Warriors': 'GAW',
-          'San Francisco Unicorns': 'SFU',
-          'BP-W': 'BPW',
-          'TR-W': 'TRW',
-          'GLCS': 'GLC',
-          'SOM': 'SOM'
+        const getText = (el) => {
+          if (!el) return '';
+          return el.textContent ? el.textContent.replace(/\s+/g, ' ').trim() : '';
         };
-        return map[name] || name.substring(0, 3).toUpperCase();
-      };
 
-      const getMatchUrl = (card) => {
-        const links = card.querySelectorAll('a[href*="cricket-live-score"]');
-        for (const link of links) {
-          const href = link.getAttribute('href');
-          if (href && href.includes('cricket-live-score')) {
-            if (href.startsWith('https://')) {
-              return href;
-            } else if (href.startsWith('/')) {
-              return `https://crex.com${href}`;
-            } else {
-              return `https://crex.com/${href}`;
+        const cleanText = (text) => {
+          if (!text) return '';
+          return text.replace(/\s+/g, ' ').trim();
+        };
+
+        const isValidTeamName = (name) => {
+          if (!name) return false;
+          const trimmed = name.trim();
+          if (trimmed.length < 2 || trimmed.length > 30) return false;
+
+          const validTeamNames = new Set([
+            'ODW',
+            'SDS',
+            'TYP-W',
+            'DG-W',
+            'MKL',
+            'CW',
+            'AC',
+            'BL',
+            'JS',
+            'KK',
+            'SS',
+            'LS',
+            'MIL',
+            'PD',
+            'NDT',
+            'RNH',
+            'SR',
+            'SRL',
+            'BP',
+            'LBW',
+            'London Spirit',
+            'MI London',
+            'Manchester Originals',
+            'Sunrisers Leeds',
+            'Birmingham Phoenix',
+            'India',
+            'England',
+            'Australia',
+            'Pakistan',
+            'New Zealand',
+            'South Africa',
+            'West Indies',
+            'Sri Lanka',
+            'Bangladesh',
+            'Afghanistan',
+            'Zimbabwe',
+            'Ireland',
+            'Nepal',
+            'Namibia',
+            'Guyana',
+            'Jaffna Kings',
+            'Galle Gallants',
+            'Dambulla Sixers',
+            'Kandy Falcons',
+            'Colombo Kaps',
+            'Kandy Royals',
+            'Worcestershire',
+            'Derbyshire',
+            'Lahore Qalandars',
+            'Perth Scorchers',
+            'Guyana Amazon Warriors',
+            'San Francisco Unicorns',
+            'BP-W',
+            'TR-W',
+            'GLCS',
+            'SOM',
+          ]);
+
+          for (const valid of validTeamNames) {
+            if (trimmed === valid || trimmed.includes(valid) || valid.includes(trimmed)) {
+              return true;
             }
           }
-        }
-        return '';
-      };
 
-      cards.forEach((card) => {
-        const cardText = getText(card);
-        
-        if (cardText.includes('Advertisement') || 
-            cardText.includes('News') || 
-            cardText.includes('Video') || 
+          const invalidNames = [
+            'Caught Out',
+            'Innings Break',
+            'Not Started',
+            'Live',
+            'Match',
+            'Over',
+            'Wicket',
+            'Run',
+            'Ball',
+            'Striker',
+            'Bowler',
+            'Toss',
+            'Commentary',
+            'Highlights',
+            'Scorecard',
+            'Discussions',
+            'Points Table',
+            'Projected Score',
+            'Milestone',
+            'Local Time',
+            'LBW Out',
+          ];
+          for (const invalid of invalidNames) {
+            if (trimmed === invalid || trimmed.includes(invalid)) return false;
+          }
+
+          return true;
+        };
+
+        const getMatchUrl = (card) => {
+          const links = card.querySelectorAll('a[href*="cricket-live-score"]');
+          for (const link of links) {
+            const href = link.getAttribute('href');
+            if (href && href.includes('cricket-live-score')) {
+              if (href.startsWith('https://')) {
+                return href;
+              } else if (href.startsWith('/')) {
+                return `https://crex.com${href}`;
+              } else {
+                return `https://crex.com/${href}`;
+              }
+            }
+          }
+          return '';
+        };
+
+        cards.forEach((card) => {
+          const cardText = getText(card);
+
+          if (
+            cardText.includes('Advertisement') ||
+            cardText.includes('News') ||
+            cardText.includes('Video') ||
             cardText.includes('Photo') ||
-            cardText.includes('Podcast')) {
-          return;
-        }
-
-        const matchUrl = getMatchUrl(card);
-        if (!matchUrl) return;
-
-        let team1Name = '';
-        let team2Name = '';
-
-        const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
-        if (vsMatch) {
-          team1Name = cleanText(vsMatch[1]);
-          team2Name = cleanText(vsMatch[2]);
-        }
-
-        if (!team1Name || !team2Name) {
-          const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
-          const teamNames = [];
-          
-          for (const selector of teamSelectors) {
-            const elements = card.querySelectorAll(selector);
-            elements.forEach(el => {
-              const text = cleanText(getText(el));
-              if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
-                teamNames.push(text);
-              }
-            });
-            if (teamNames.length >= 2) break;
+            cardText.includes('Podcast')
+          ) {
+            return;
           }
 
-          if (teamNames.length >= 2) {
-            team1Name = teamNames[0];
-            team2Name = teamNames[1];
-          }
-        }
+          const matchUrl = getMatchUrl(card);
+          if (!matchUrl) return;
 
-        const flags = [];
-        const flagImages = card.querySelectorAll('img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img');
-        flagImages.forEach(img => {
-          const src = img.getAttribute('src') || '';
-          if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
-            flags.push(src);
-          }
-        });
+          const urlKey = matchUrl.split('?')[0];
+          if (seenUrls.has(urlKey)) return;
+          seenUrls.add(urlKey);
 
-        let team1Score = '';
-        let team1Wickets = '';
-        let team1Overs = '';
-        let team2Score = '';
-        let team2Wickets = '';
-        let team2Overs = '';
+          let team1Name = '';
+          let team2Name = '';
+          let team1Score = '';
+          let team1Wickets = '';
+          let team1Overs = '';
+          let team2Score = '';
+          let team2Wickets = '';
+          let team2Overs = '';
 
-        const scoreElements = card.querySelectorAll('.score, .team-score, .runs, .score-text, .match-score');
-        const oversElements = card.querySelectorAll('.overs, .over, .overs-text, .match-overs');
-        
-        if (scoreElements.length >= 2) {
-          const score1Text = cleanText(getText(scoreElements[0]));
-          const score2Text = cleanText(getText(scoreElements[1]));
-          
-          const score1Match = score1Text.match(/(\d+)[-/](\d+)/);
-          if (score1Match) {
-            team1Score = score1Match[1];
-            team1Wickets = score1Match[2];
-          }
-          
-          const score2Match = score2Text.match(/(\d+)[-/](\d+)/);
-          if (score2Match) {
-            team2Score = score2Match[1];
-            team2Wickets = score2Match[2];
-          }
-        }
-
-        if (oversElements.length >= 2) {
-          team1Overs = cleanText(getText(oversElements[0])).replace(/[()]/g, '');
-          team2Overs = cleanText(getText(oversElements[1])).replace(/[()]/g, '');
-        }
-
-        let series = '';
-        const seriesSelectors = ['.series-name', '.snameTag', '.match-series', '.series-title', '.tournament', '.series'];
-        for (const selector of seriesSelectors) {
-          const el = card.querySelector(selector);
-          if (el) {
-            series = cleanText(getText(el));
-            break;
-          }
-        }
-
-        if (team1Name && team2Name) {
-          matches.push({
-            url: matchUrl,
-            status: 'LIVE',
-            team1: {
-              name: team1Name,
-              short: getTeamShortName(team1Name),
-              flag: flags[0] || '',
-              score: team1Score,
-              wickets: team1Wickets,
-              overs: team1Overs
-            },
-            team2: {
-              name: team2Name,
-              short: getTeamShortName(team2Name),
-              flag: flags[1] || '',
-              score: team2Score,
-              wickets: team2Wickets,
-              overs: team2Overs
-            },
-            series: series
-          });
-        }
-      });
-
-      return matches;
-    }, foundCards);
-
-    logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
-    
-    if (discoveredMatches.length > 0) {
-      discoveredMatches.forEach((match, index) => {
-        logger.info(`  ${index + 1}. ${match.team1.name} (${match.team1.score}/${match.team1.wickets}) vs ${match.team2.name} (${match.team2.score}/${match.team2.wickets}) - ${match.url}`);
-      });
-    }
-
-    deepLog(`PHASE 1 - Discovered ${discoveredMatches.length} live matches`, discoveredMatches);
-    return discoveredMatches;
-  }
-
-  // ============================================================
-  // CREATE FALLBACK MATCH
-  // ============================================================
-  createFallbackMatch(discovered) {
-    return {
-      match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      match_url: discovered.url,
-      series: {
-        id: `series_${Date.now()}`,
-        name: discovered.series || 'Unknown Series',
-        short_name: '',
-        season: new Date().getFullYear().toString()
-      },
-      match: {
-        number: 'Match',
-        format: 'T20',
-        status: 'Live',
-        start_time: '',
-        current_innings: '',
-        current_ball: ''
-      },
-      venue: {
-        id: `venue_${Date.now()}`,
-        name: 'TBD'
-      },
-      teams: {
-        home: {
-          id: this.getTeamId(discovered.team1.name),
-          name: discovered.team1.name || 'Team 1',
-          short_name: discovered.team1.short || 'T1',
-          logo: discovered.team1.flag || ''
-        },
-        away: {
-          id: this.getTeamId(discovered.team2.name),
-          name: discovered.team2.name || 'Team 2',
-          short_name: discovered.team2.short || 'T2',
-          logo: discovered.team2.flag || ''
-        }
-      },
-      scoreboard: {
-        batting_team: { name: discovered.team1.name, score: discovered.team1.score || '', runs: null, wickets: null, overs: discovered.team1.overs || '' },
-        bowling_team: { name: discovered.team2.name },
-        target: null,
-        required_runs: null,
-        required_balls: null,
-        crr: null,
-        rrr: null,
-        current_ball: ''
-      },
-      current_batsmen: [],
-      current_bowler: { name: '', overs: '', runs: null, wickets: null },
-      overs: [],
-      commentary: [],
-      prediction: { home_probability: null, away_probability: null, projected_scores: [] },
-      toss: { status: 'Not Started', winner: '', decision: '' },
-      weather: null,
-      countdown: null
-    };
-  }
-
-  // ============================================================
-  // EXTRACT MATCH DETAILS
-  // ============================================================
-  async extractMatchDetails(discovered) {
-    const series = await this.extractSeries(this.page);
-    const venue = await this.extractVenue(this.page);
-    const scoreboard = await this.extractScoreboard(this.page);
-    const currentBatsmen = await this.extractCurrentBatsmen(this.page);
-    const currentBowler = await this.extractCurrentBowler(this.page);
-    const overs = await this.extractOversTimeline(this.page);
-    const commentary = await this.extractCommentary(this.page);
-    const prediction = await this.extractPrediction(this.page);
-    const toss = await this.extractToss(this.page);
-    
-    // Get weather
-    let weather = null;
-    if (venue || series || discovered.team1.name || discovered.team2.name) {
-      weather = await this.getWeatherForVenue(
-        venue,
-        series,
-        '',
-        discovered.team1.name,
-        discovered.team2.name,
-        discovered.url
-      );
-    }
-
-    let format = 'T20';
-    const titleText = await this.extractTextFromSelectors(this.page, this.page, [
-      'h1', '.match-title', '.title'
-    ]);
-    if (titleText) {
-      if (titleText.includes('ODI')) format = 'ODI';
-      else if (titleText.includes('Test')) format = 'Test';
-      else if (titleText.includes('100B')) format = 'The Hundred';
-    }
-
-    return {
-      match_id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-      match_url: discovered.url,
-      series: {
-        id: `series_${Date.now()}`,
-        name: series || discovered.series || 'Unknown Series',
-        short_name: series ? series.substring(0, 20) : '',
-        season: new Date().getFullYear().toString()
-      },
-      match: {
-        number: titleText ? (titleText.match(/(\d+(?:st|nd|rd|th)\s+(?:Match|T20|ODI|Test|100B))/i)?.[0] || 'Match') : 'Match',
-        format: format,
-        status: 'Live',
-        start_time: '',
-        current_innings: '',
-        current_ball: scoreboard.current_ball || ''
-      },
-      venue: {
-        id: `venue_${Date.now()}`,
-        name: venue || 'TBD'
-      },
-      teams: {
-        home: {
-          id: this.getTeamId(scoreboard.batting_team.name || discovered.team1.name),
-          name: scoreboard.batting_team.name || discovered.team1.name,
-          short_name: discovered.team1.short || '',
-          logo: discovered.team1.flag || ''
-        },
-        away: {
-          id: this.getTeamId(scoreboard.bowling_team.name || discovered.team2.name),
-          name: scoreboard.bowling_team.name || discovered.team2.name,
-          short_name: discovered.team2.short || '',
-          logo: discovered.team2.flag || ''
-        }
-      },
-      scoreboard: {
-        batting_team: {
-          name: scoreboard.batting_team.name || discovered.team1.name,
-          score: scoreboard.batting_team.score || discovered.team1.score || '',
-          runs: scoreboard.batting_team.runs,
-          wickets: scoreboard.batting_team.wickets,
-          overs: scoreboard.batting_team.overs || discovered.team1.overs || ''
-        },
-        bowling_team: {
-          name: scoreboard.bowling_team.name || discovered.team2.name
-        },
-        target: scoreboard.target,
-        required_runs: scoreboard.required_runs,
-        required_balls: scoreboard.required_balls,
-        crr: scoreboard.crr,
-        rrr: scoreboard.rrr,
-        current_ball: scoreboard.current_ball || ''
-      },
-      current_batsmen: currentBatsmen,
-      current_bowler: currentBowler,
-      overs: overs,
-      commentary: commentary,
-      prediction: prediction,
-      toss: toss,
-      weather: weather || null,
-      countdown: null
-    };
-  }
-
-  // ============================================================
-  // EXTRACT CURRENT BATSMEN
-  // ============================================================
-  async extractCurrentBatsmen(page) {
-    const batsmen = [];
-    
-    try {
-      await page.waitForSelector('.player-card-wrapper, .playing-batsmen-wrapper, .player-profile, .player-card', {
-        timeout: 10000
-      });
-    } catch (e) {}
-
-    const battingContainerSelectors = [
-      '.player-active', '.player-card-wrapper', '.player-card', '.player-profile',
-      '.playing-batsmen-wrapper', '.batsmen-partnership', '.batsmen-info-wrapper',
-      '.live-data', '.player-section', '.batting-card', '.innings-batting',
-      '[class*="batsmen"]', '[class*="player-card"]', '[class*="player-profile"]',
-      '.team-innig .player-info', '.score-card .player-info'
-    ];
-    
-    let container = null;
-    for (const selector of battingContainerSelectors) {
-      try {
-        const found = await page.$(selector);
-        if (found) {
-          container = found;
-          break;
-        }
-      } catch (e) { continue; }
-    }
-    if (!container) return batsmen;
-
-    const cardSelectors = [
-      '.player-card-wrapper', '.player-card', '.player-profile', '.batsman-item',
-      '.batsman', '[class*="player-card"]', '[class*="player-profile"]',
-      '[class*="batsman"]', '.player-info'
-    ];
-    
-    let cards = [];
-    for (const selector of cardSelectors) {
-      try {
-        const found = await container.$$(selector);
-        if (found && found.length > 0) {
-          cards = found;
-          break;
-        }
-      } catch (e) { continue; }
-    }
-    if (cards.length === 0) return batsmen;
-
-    for (let i = 0; i < cards.length && batsmen.length < 2; i++) {
-      const card = cards[i];
-      try {
-        let name = '';
-        const nameSelectors = [
-          '.batsmen-name', '.player-name', '.playerName', '.name',
-          '.p-name', 'a[href*="/player/"] p', 'a[href*="/player/"]'
-        ];
-        for (const nameSel of nameSelectors) {
-          try {
-            const nameEl = await card.$(nameSel);
-            if (nameEl) {
-              const text = await page.evaluate(el => el.textContent.trim(), nameEl);
-              if (text && text.length > 0 && text.length < 50) {
-                name = text;
-                break;
-              }
+          const vsMatch = cardText.match(/([A-Za-z\s]+)\s+vs\s+([A-Za-z\s]+)/i);
+          if (vsMatch) {
+            const t1 = cleanText(vsMatch[1]);
+            const t2 = cleanText(vsMatch[2]);
+            if (isValidTeamName(t1) && isValidTeamName(t2)) {
+              team1Name = t1;
+              team2Name = t2;
             }
-          } catch (e) {}
-        }
-        if (!name) continue;
+          }
 
-        let runs = '', balls = '';
-        const scoreSelectors = ['.batsmen-score', '.runs', '.score'];
-        for (const scoreSel of scoreSelectors) {
-          try {
-            const scoreEl = await card.$(scoreSel);
-            if (scoreEl) {
-              const scoreText = await page.evaluate(el => el.textContent.trim(), scoreEl);
-              if (scoreText) {
-                const scoreMatch = scoreText.match(/(\d+)\s*\(\s*(\d+)\s*\)/);
-                if (scoreMatch) {
-                  runs = scoreMatch[1];
-                  balls = scoreMatch[2];
-                  break;
+          if (!team1Name || !team2Name) {
+            const teamSelectors = ['.team-name', '.teamName', '.name', '.team', '.cb-team-name'];
+            const teamNames = [];
+
+            for (const selector of teamSelectors) {
+              const elements = card.querySelectorAll(selector);
+              elements.forEach((el) => {
+                const text = cleanText(getText(el));
+                if (text && text.length > 1 && text.length < 30 && !text.includes('vs')) {
+                  if (isValidTeamName(text)) {
+                    teamNames.push(text);
+                  }
                 }
-                const numMatch = scoreText.match(/(\d+)/);
-                if (numMatch) { runs = numMatch[1]; break; }
+              });
+              if (teamNames.length >= 2) break;
+            }
+
+            if (teamNames.length >= 2) {
+              team1Name = teamNames[0];
+              team2Name = teamNames[1];
+            }
+          }
+
+          if (!team1Name || !team2Name) {
+            const urlTeams = matchUrl.match(/\/([A-Za-z0-9-]+)-vs-([A-Za-z0-9-]+)/);
+            if (urlTeams) {
+              const t1 = urlTeams[1].toUpperCase();
+              const t2 = urlTeams[2].toUpperCase();
+              if (isValidTeamName(t1) && isValidTeamName(t2)) {
+                team1Name = t1;
+                team2Name = t2;
               }
             }
-          } catch (e) {}
-        }
+          }
 
-        let image = null;
-        const imageSelectors = ['.batsmen-image img', '.player-image img', 'img[src*="player"]'];
-        for (const imgSel of imageSelectors) {
-          try {
-            const imgEl = await card.$(imgSel);
-            if (imgEl) {
-              let src = await page.evaluate(el => el.getAttribute('src'), imgEl);
-              if (src && !src.includes('placeholder')) {
-                image = src.startsWith('/') ? `https://crex.com${src}` : src;
-                break;
-              }
+          if (!team1Name || !team2Name) return;
+
+          const flags = [];
+          const flagImages = card.querySelectorAll(
+            'img[src*="Teams"], img[src*="cricketvectors"], .team-flag img, .flag img'
+          );
+          flagImages.forEach((img) => {
+            const src = img.getAttribute('src') || '';
+            if (src && (src.includes('Teams') || src.includes('cricketvectors'))) {
+              flags.push(src);
             }
-          } catch (e) {}
-        }
+          });
 
-        let profileUrl = null;
-        const profileSelectors = ['a[href*="/player/"]', 'a[href*="player-profile"]'];
-        for (const profSel of profileSelectors) {
-          try {
-            const profEl = await card.$(profSel);
-            if (profEl) {
-              const href = await page.evaluate(el => el.getAttribute('href'), profEl);
-              if (href) {
-                profileUrl = href.startsWith('/') ? `https://crex.com${href}` : href;
-                break;
-              }
+          const scoreElements = card.querySelectorAll(
+            '.score, .team-score, .runs, .score-text, .match-score'
+          );
+          const oversElements = card.querySelectorAll('.overs, .over, .overs-text, .match-overs');
+
+          if (scoreElements.length >= 2) {
+            const score1Text = cleanText(getText(scoreElements[0]));
+            const score2Text = cleanText(getText(scoreElements[1]));
+
+            const score1Match = score1Text.match(/(\d+)[-/](\d+)/);
+            if (score1Match) {
+              team1Score = score1Match[1];
+              team1Wickets = score1Match[2];
             }
-          } catch (e) {}
-        }
 
-        let is_striker = false;
-        try {
-          const strikeIcon = await card.$('.circle-strike-icon');
-          if (strikeIcon) is_striker = true;
-        } catch (e) {}
-        if (!is_striker) {
-          try {
-            const svgs = await card.$$('svg');
-            for (const svg of svgs) {
-              const svgHtml = await page.evaluate(el => el.outerHTML, svg);
-              if (svgHtml && (svgHtml.includes('ce_highlight_ac2') || svgHtml.includes('highlight_ac2'))) {
-                is_striker = true;
-                break;
-              }
+            const score2Match = score2Text.match(/(\d+)[-/](\d+)/);
+            if (score2Match) {
+              team2Score = score2Match[1];
+              team2Wickets = score2Match[2];
             }
-          } catch (e) {}
-        }
+          }
 
-        batsmen.push({
-          name: name,
-          runs: runs || null,
-          balls: balls || null,
-          image: image,
-          profile_url: profileUrl,
-          is_striker: is_striker
+          if (oversElements.length >= 2) {
+            team1Overs = cleanText(getText(oversElements[0])).replace(/[()]/g, '');
+            team2Overs = cleanText(getText(oversElements[1])).replace(/[()]/g, '');
+          }
+
+          let series = '';
+          const seriesSelectors = [
+            '.series-name',
+            '.snameTag',
+            '.match-series',
+            '.series-title',
+            '.tournament',
+            '.series',
+          ];
+          for (const selector of seriesSelectors) {
+            const el = card.querySelector(selector);
+            if (el) {
+              series = cleanText(getText(el));
+              break;
+            }
+          }
+
+          if (team1Name && team2Name && isValidTeamName(team1Name) && isValidTeamName(team2Name)) {
+            matches.push({
+              url: matchUrl,
+              status: 'LIVE',
+              team1: {
+                name: team1Name,
+                short: team1Name.substring(0, 3).toUpperCase(),
+                flag: flags[0] || '',
+                score: team1Score,
+                wickets: team1Wickets,
+                overs: team1Overs,
+              },
+              team2: {
+                name: team2Name,
+                short: team2Name.substring(0, 3).toUpperCase(),
+                flag: flags[1] || '',
+                score: team2Score,
+                wickets: team2Wickets,
+                overs: team2Overs,
+              },
+              series: series,
+            });
+          }
         });
 
-      } catch (error) {
-        continue;
-      }
-    }
+        return matches;
+      }, foundCards);
 
-    if (batsmen.length > 0) {
-      const strikers = batsmen.filter(b => b.is_striker === true);
-      if (strikers.length === 0) {
-        batsmen[0].is_striker = true;
-      } else if (strikers.length > 1) {
-        let foundFirst = false;
-        for (const batsman of batsmen) {
-          if (batsman.is_striker) {
-            if (!foundFirst) { foundFirst = true; }
-            else { batsman.is_striker = false; }
-          }
-        }
+      if (!discoveredMatches || !Array.isArray(discoveredMatches)) {
+        logger.warn('⚠️ discoverLiveMatches returned undefined or null, returning empty array');
+        return [];
       }
+
+      logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
+
+      if (discoveredMatches.length > 0) {
+        discoveredMatches.forEach((match, index) => {
+          logger.info(
+            `  ${index + 1}. ${match.team1.name} (${match.team1.score}/${match.team1.wickets}) vs ${match.team2.name} (${match.team2.score}/${match.team2.wickets})`
+          );
+        });
+      }
+
+      return discoveredMatches;
+    } catch (error) {
+      logger.error(`❌ Error in discoverLiveMatches evaluate: ${error.message}`);
+      return [];
     }
-    return batsmen;
   }
 
-  // ============================================================
-  // EXTRACT CURRENT BOWLER
-  // ============================================================
-  async extractCurrentBowler(page) {
-    const bowler = { name: '', overs: '', runs: null, wickets: null };
+  // ⭐ MAIN SCRAPE METHOD WITH IMPROVED LOCKING
+  async scrapeLive(forceRefresh = true) {
+    // Check if already scraping
+    if (this._isScraping) {
+      const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
+      if (lockAge < 10000) {
+        logger.warn(
+          `⚠️ Scrape already in progress (${Math.round(lockAge / 1000)}s), returning existing promise`
+        );
+        if (this._scrapePromise) {
+          return this._scrapePromise;
+        }
+        return {
+          success: false,
+          source: 'crex',
+          type: 'live',
+          timestamp: new Date().toISOString(),
+          data: [],
+          total: 0,
+          error: 'Scrape already in progress',
+          duration: 0,
+        };
+      } else {
+        this.forceReleaseLock();
+      }
+    }
+
+    const scrapeId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+    // Acquire lock
+    const lockAcquired = await this.acquireLock(scrapeId);
+    if (!lockAcquired) {
+      if (this._scrapePromise) {
+        return this._scrapePromise;
+      }
+      return {
+        success: false,
+        source: 'crex',
+        type: 'live',
+        timestamp: new Date().toISOString(),
+        data: [],
+        total: 0,
+        error: 'Could not acquire lock',
+        duration: 0,
+        scrapeId: scrapeId,
+      };
+    }
+
+    // Create promise for this scrape
+    this._scrapePromise = this._executeScrape(scrapeId);
+
     try {
-      const bowlingContainerSelectors = [
-        '.player-card-wrapper', '.player-card.border', '.player-profile',
-        '.bowling-card', '.bowler-info', '.current-bowler', '.bowler-container',
-        '.player-info', '[class*="bowler"]', '[class*="bowling"]'
-      ];
-      
-      let container = null;
-      for (const selector of bowlingContainerSelectors) {
-        try {
-          const found = await page.$(selector);
-          if (found) {
-            container = found;
-            break;
-          }
-        } catch (e) { continue; }
-      }
-
-      if (!container) {
-        const teamInnings = await page.$$('.team-innig, .live-data, .team-result');
-        if (teamInnings.length >= 2) {
-          const bowlingTeam = teamInnings[1];
-          const playerCards = await bowlingTeam.$$('.player-card, .player-card-wrapper, .player-profile');
-          if (playerCards.length > 0) {
-            container = playerCards[0];
-          }
-        }
-      }
-
-      if (!container) return bowler;
-
-      const nameSelectors = [
-        '.batsmen-name', '.player-name', '.name', '.bowler-name',
-        'a[href*="/player/"] p', 'a[href*="/player/"]', '.p-name'
-      ];
-      for (const nameSel of nameSelectors) {
-        try {
-          const nameEl = await container.$(nameSel);
-          if (nameEl) {
-            const text = await page.evaluate(el => el.textContent.trim(), nameEl);
-            if (text && text.length > 0 && text.length < 50) {
-              bowler.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-
-      const figuresSelectors = [
-        '.bowling-figures', '.figures', '.stats', '.score',
-        '.bowling-stats', '.bowler-stats'
-      ];
-      for (const figSel of figuresSelectors) {
-        try {
-          const figEl = await container.$(figSel);
-          if (figEl) {
-            const text = await page.evaluate(el => el.textContent.trim(), figEl);
-            if (text) {
-              const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
-              if (figuresMatch) {
-                bowler.wickets = parseInt(figuresMatch[1]);
-                bowler.runs = parseInt(figuresMatch[2]);
-                bowler.overs = figuresMatch[3];
-                break;
-              }
-            }
-          }
-        } catch (e) {}
-      }
-
-      if (!bowler.overs && !bowler.runs && !bowler.wickets) {
-        try {
-          const text = await page.evaluate(el => el.textContent.trim(), container);
-          if (text) {
-            const figuresMatch = text.match(/(\d+)-(\d+)\s*\(([\d.]+)\)/);
-            if (figuresMatch) {
-              bowler.wickets = parseInt(figuresMatch[1]);
-              bowler.runs = parseInt(figuresMatch[2]);
-              bowler.overs = figuresMatch[3];
-            }
-          }
-        } catch (e) {}
-      }
-    } catch (error) {}
-    return bowler;
+      const result = await this._scrapePromise;
+      this._scrapePromise = null;
+      return result;
+    } catch (error) {
+      this._scrapePromise = null;
+      this.forceReleaseLock();
+      throw error;
+    }
   }
 
-  // ============================================================
-  // EXTRACT TOSS
-  // ============================================================
-  async extractToss(page) {
-    const toss = { status: 'Not Started' };
-    let foundToss = false;
-    let tossMessage = '';
+  async _executeScrape(scrapeId) {
+    this.scrapeStartTime = Date.now();
 
-    const tossSelectors = [
-      '.toss-wrap p', '.toss-wrap', '[class*="toss"] p', '[class*="toss"]',
-      '.match-info .toss', '.toss-info', '.toss-detail', '.match-toss'
-    ];
-
-    for (const selector of tossSelectors) {
-      try {
-        const elements = await page.$$(selector);
-        for (const el of elements) {
-          try {
-            let text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text && text.length > 0) {
-              text = text.replace(/\s+/g, ' ').trim();
-              if (text.includes('won the toss')) {
-                tossMessage = text;
-                foundToss = true;
-                toss.status = tossMessage;
-                return toss;
-              }
-            }
-          } catch (e) { continue; }
-        }
-        if (foundToss) break;
-      } catch (error) { continue; }
-    }
-
-    if (!foundToss) {
-      try {
-        const bodyText = await page.evaluate(() => document.body.textContent);
-        const lines = bodyText.split('\n');
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine.includes('won the toss')) {
-            tossMessage = trimmedLine.replace(/\s+/g, ' ').trim();
-            foundToss = true;
-            toss.status = tossMessage;
-            return toss;
-          }
-        }
-      } catch (e) {}
-    }
-
-    return toss;
-  }
-
-  // ============================================================
-  // EXTRACT SERIES
-  // ============================================================
-  async extractSeries(page) {
-    const selectors = [
-      '.series-name', '.snameTag', '.match-series', '.series-title',
-      '.tournament', '.series', '.match-tournament', 'h1',
-      '.match-header .series', '.match-info .series'
-    ];
-    for (const selector of selectors) {
-      try {
-        const el = await page.$(selector);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text && text.length > 0) {
-            return text;
-          }
-        }
-      } catch (e) {}
-    }
     try {
-      const title = await page.title();
-      if (title && !title.includes('Cricket') && title.length > 3) {
-        return title;
-      }
-    } catch (e) {}
-    return '';
-  }
+      logger.info(`🚀 [${scrapeId}] Starting live matches scraper`);
 
-  // ============================================================
-  // EXTRACT VENUE
-  // ============================================================
-  async extractVenue(page) {
-    const selectors = [
-      '.venue', '.match-venue', '.venue-name', '.location', '.stadium',
-      '.match-location', '.match-info .venue', '.match-details .venue',
-      '.matchInfo', '.info-row', '.venue-info', '.meta-info',
-      '.scorecard-header', '[data-testid*="venue"]', '[class*="venue"]',
-      '[class*="location"]'
-    ];
-    
-    for (const selector of selectors) {
-      try {
-        const elements = await page.$$(selector);
-        for (const el of elements) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text && text.length > 3 && !text.includes('Over') && !text.includes('wd')) {
-            return text;
-          }
-        }
-      } catch (e) {}
-    }
-    
-    try {
-      const bodyText = await page.evaluate(() => document.body.textContent);
-      const patterns = [
-        /Venue:\s*([^,\n]+(?:,[^,\n]+)?)/i,
-        /at\s+([A-Za-z\s,]+(?:Stadium|Ground|Park|Gardens|Oval))/i,
-        /Stadium:\s*([^,\n]+)/i,
-        /Ground:\s*([^,\n]+)/i,
-        /Location:\s*([^,\n]+)/i
-      ];
-      for (const pattern of patterns) {
-        const match = bodyText.match(pattern);
-        if (match && match[1]) {
-          const venue = match[1].trim();
-          if (venue && venue.length > 3) {
-            return venue;
-          }
-        }
-      }
-    } catch (e) {}
-    
-    return '';
-  }
-
-  // ============================================================
-  // EXTRACT SCOREBOARD - Supports The Hundred (35b) format
-  // ============================================================
-  async extractScoreboard(page) {
-    const scoreboard = {
-      batting_team: { name: '', score: '', runs: null, wickets: null, overs: '' },
-      bowling_team: { name: '' },
-      target: null,
-      required_runs: null,
-      required_balls: null,
-      crr: null,
-      rrr: null,
-      current_ball: ''
-    };
-
-    const teamInningsSelectors = ['.team-innig', '.live-data', '.team-result', '.result-box'];
-    let battingEl = null;
-    let bowlingEl = null;
-    
-    for (const selector of teamInningsSelectors) {
-      try {
-        const elements = await page.$$(selector);
-        if (elements.length >= 2) {
-          battingEl = elements[0];
-          bowlingEl = elements[1];
-          break;
-        }
-      } catch (e) {}
-    }
-
-    if (battingEl && bowlingEl) {
-      const nameSelectors = ['.team-name', '.name', '.team-title', '.team-label'];
-      for (const sel of nameSelectors) {
-        try {
-          const el = await battingEl.$(sel);
-          if (el) {
-            const text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text) {
-              scoreboard.batting_team.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
+      const browserOk = await this.initializeBrowser();
+      if (!browserOk || !this.page) {
+        logger.error(`❌ [${scrapeId}] Failed to initialize browser`);
+        this.forceReleaseLock();
+        return {
+          success: false,
+          source: 'crex',
+          type: 'live',
+          timestamp: new Date().toISOString(),
+          data: [],
+          total: 0,
+          error: 'Browser initialization failed',
+          duration: Date.now() - this.scrapeStartTime,
+          scrapeId: scrapeId,
+        };
       }
 
-      const runsContainer = await battingEl.$('.runs, .score, .team-score');
-      
-      if (runsContainer) {
-        const spans = await runsContainer.$$('span');
-        const spanTexts = [];
-        for (const span of spans) {
-          const text = await page.evaluate(el => el.textContent.trim(), span);
-          if (text) spanTexts.push(text);
-        }
-        
-        if (spanTexts.length > 0) {
-          const scoreText = spanTexts[0];
-          const scoreMatch = scoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
-          if (scoreMatch) {
-            scoreboard.batting_team.score = scoreText;
-            scoreboard.batting_team.runs = parseInt(scoreMatch[1]);
-            scoreboard.batting_team.wickets = parseInt(scoreMatch[2]);
-          } else {
-            const numMatch = scoreText.match(/(\d+)/);
-            if (numMatch) {
-              scoreboard.batting_team.score = scoreText;
-              scoreboard.batting_team.runs = parseInt(numMatch[1]);
-            }
-          }
-        }
-        
-        if (spanTexts.length > 1) {
-          const oversValue = spanTexts[1];
-          const overRegex = /^(\d+\.\d+|\d+b)$/i;
-          if (oversValue && overRegex.test(oversValue)) {
-            scoreboard.batting_team.overs = oversValue;
-            scoreboard.current_ball = oversValue.replace(/[()]/g, '');
-          } else {
-            const allText = await page.evaluate(el => el.textContent.trim(), runsContainer);
-            const overMatch = allText.match(/(\d+\.\d+|\d+b)/);
-            if (overMatch) {
-              scoreboard.batting_team.overs = overMatch[1];
-              scoreboard.current_ball = overMatch[1].replace(/[()]/g, '');
-            }
-          }
-        } else {
-          const battingText = await page.evaluate(el => el.textContent.trim(), battingEl);
-          const overMatch = battingText.match(/(\d+\.\d+|\d+b)/);
-          if (overMatch) {
-            scoreboard.batting_team.overs = overMatch[1];
-            scoreboard.current_ball = overMatch[1].replace(/[()]/g, '');
-          }
+      this.processedUrls.clear();
+      this.agentResults = [];
+      this.agentStats = {};
+      this.activeAgents = 0;
+
+      const discoveredMatches = await this.discoverLiveMatches();
+
+      if (!discoveredMatches || !Array.isArray(discoveredMatches)) {
+        logger.warn(`⚠️ [${scrapeId}] Discovered matches is not an array, using empty array`);
+        this.stats.discovered = 0;
+        this.forceReleaseLock();
+        return {
+          success: true,
+          source: 'crex',
+          type: 'live',
+          timestamp: new Date().toISOString(),
+          data: [],
+          total: 0,
+          duration: Date.now() - this.scrapeStartTime,
+          cacheBuster: Date.now(),
+          scrapeId: scrapeId,
+        };
+      }
+
+      this.stats.discovered = discoveredMatches.length;
+
+      if (discoveredMatches.length === 0) {
+        logger.info(`📢 [${scrapeId}] No live matches currently in progress`);
+        this.forceReleaseLock();
+        return {
+          success: true,
+          source: 'crex',
+          type: 'live',
+          timestamp: new Date().toISOString(),
+          data: [],
+          total: 0,
+          duration: Date.now() - this.scrapeStartTime,
+          cacheBuster: Date.now(),
+          scrapeId: scrapeId,
+        };
+      }
+
+      // Remove duplicates
+      const uniqueMatches = [];
+      const seenUrls = new Set();
+      for (const match of discoveredMatches) {
+        const urlKey = match.url.split('?')[0];
+        if (!seenUrls.has(urlKey)) {
+          seenUrls.add(urlKey);
+          uniqueMatches.push(match);
         }
       }
 
-      for (const sel of nameSelectors) {
-        try {
-          const el = await bowlingEl.$(sel);
-          if (el) {
-            const text = await page.evaluate(el => el.textContent.trim(), el);
-            if (text) {
-              scoreboard.bowling_team.name = text;
-              break;
-            }
-          }
-        } catch (e) {}
+      const duplicateCount = discoveredMatches.length - uniqueMatches.length;
+      logger.info(
+        `📋 [${scrapeId}] Found ${uniqueMatches.length} unique live matches (removed ${duplicateCount} duplicates)`
+      );
+
+      const fullMatches = await this.processWithAgents(uniqueMatches);
+      this.stats.detailed = fullMatches.length;
+
+      logger.info(
+        `📋 [${scrapeId}] Phase 2 complete: Extracted details for ${fullMatches.length} live matches`
+      );
+
+      await this.closeBrowser();
+      this.logStatistics();
+      this.logAgentStatistics();
+
+      const result = {
+        success: true,
+        source: 'crex',
+        type: 'live',
+        timestamp: new Date().toISOString(),
+        data: fullMatches,
+        total: fullMatches.length,
+        duration: Date.now() - this.scrapeStartTime,
+        cacheBuster: Date.now(),
+        scrapeId: scrapeId,
+      };
+
+      if (fullMatches.length > 0) {
+        deepLog(`📋 SAMPLE LIVE MATCH - First match in detail`, fullMatches[0]);
       }
+
+      this.forceReleaseLock();
+      return result;
+    } catch (error) {
+      logger.error(`❌ [${scrapeId}] LiveScraper error: ${error.message}`);
+      logger.error(error.stack);
+      await this.closeBrowser();
+      this.forceReleaseLock();
+
+      return {
+        success: false,
+        source: 'crex',
+        type: 'live',
+        timestamp: new Date().toISOString(),
+        data: [],
+        total: 0,
+        error: error.message,
+        duration: Date.now() - this.scrapeStartTime,
+        scrapeId: scrapeId,
+      };
     }
-
-    const crrSelectors = ['.crr', '.current-run-rate', '.run-rate'];
-    for (const sel of crrSelectors) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const numMatch = text.match(/(\d+\.\d+)/);
-            if (numMatch) { scoreboard.crr = parseFloat(numMatch[1]); break; }
-          }
-        }
-      } catch (e) {}
-    }
-
-    const rrrSelectors = ['.rrr', '.required-run-rate', '.req-run-rate'];
-    for (const sel of rrrSelectors) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const numMatch = text.match(/(\d+\.\d+)/);
-            if (numMatch) { scoreboard.rrr = parseFloat(numMatch[1]); break; }
-          }
-        }
-      } catch (e) {}
-    }
-
-    return scoreboard;
-  }
-
-  // ============================================================
-  // EXTRACT OVERS TIMELINE
-  // ============================================================
-  async extractOversTimeline(page) {
-    const overs = [];
-    const containerSelectors = [
-      '.overs-timeline', '.overs-slide-container', '.overs-container'
-    ];
-    for (const containerSel of containerSelectors) {
-      try {
-        const container = await page.$(containerSel);
-        if (container) {
-          const slideSelectors = ['.overs-slide', '.content', '.over-item'];
-          for (const slideSel of slideSelectors) {
-            const slides = await container.$$(slideSel);
-            for (const slide of slides) {
-              let overNumber = '';
-              const overSelectors = [
-                '.over-title', '.over-number', '.title', '.header', 'h4'
-              ];
-              for (const sel of overSelectors) {
-                try {
-                  const el = await slide.$(sel);
-                  if (el) {
-                    const text = await page.evaluate(el => el.textContent.trim(), el);
-                    if (text) {
-                      let match = text.match(/Over\s*(\d+)/i);
-                      if (match) { overNumber = match[1]; break; }
-                      match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
-                      if (match) { overNumber = `${match[1]}th Five`; break; }
-                      if (text.match(/^\d+$/)) { overNumber = text; break; }
-                    }
-                  }
-                } catch (e) {}
-              }
-              if (!overNumber) {
-                try {
-                  const text = await page.evaluate(el => el.textContent.trim(), slide);
-                  let match = text.match(/Over\s*(\d+)/i);
-                  if (match) { overNumber = match[1]; }
-                  else {
-                    match = text.match(/(\d+)(?:st|nd|rd|th)\s+Five/i);
-                    if (match) { overNumber = `${match[1]}th Five`; }
-                  }
-                } catch (e) {}
-              }
-              const balls = [];
-              const ballElements = await slide.$$('.over-ball, .ball');
-              for (const ballEl of ballElements) {
-                const result = await page.evaluate(el => el.textContent.trim(), ballEl);
-                if (result) balls.push(result);
-              }
-              let total = '';
-              const totalSelectors = ['.total', '.over-total'];
-              for (const sel of totalSelectors) {
-                try {
-                  const el = await slide.$(sel);
-                  if (el) {
-                    const text = await page.evaluate(el => el.textContent.trim(), el);
-                    if (text) { total = text.replace(/^=\s*/, '').trim(); break; }
-                  }
-                } catch (e) {}
-              }
-              if (!total) {
-                try {
-                  const text = await page.evaluate(el => el.textContent.trim(), slide);
-                  const match = text.match(/=\s*(\d+)/);
-                  if (match) { total = match[1]; }
-                } catch (e) {}
-              }
-              if (overNumber || balls.length > 0) {
-                overs.push({ over: overNumber || '', balls: balls, total: total || '' });
-              }
-            }
-            if (overs.length > 0) break;
-          }
-        }
-        if (overs.length > 0) break;
-      } catch (e) {}
-    }
-    return overs;
-  }
-
-  // ============================================================
-  // EXTRACT COMMENTARY
-  // ============================================================
-  async extractCommentary(page) {
-    const commentary = [];
-    const containerSelectors = [
-      '.commentary-container', '.commentary-section', '.commentary-list', '.live-commentary'
-    ];
-    for (const containerSel of containerSelectors) {
-      try {
-        const container = await page.$(containerSel);
-        if (container) {
-          const itemSelectors = ['.commentary-item', '.comment', '.ball-commentary'];
-          for (const itemSel of itemSelectors) {
-            const items = await container.$$(itemSel);
-            for (const item of items) {
-              const ball = await this.extractTextFromSelectors(page, item, [
-                '.ball-number', '.over-ball', '.ball'
-              ]);
-              const result = await this.extractTextFromSelectors(page, item, [
-                '.result', '.event', '.ball-result'
-              ]);
-              const text = await this.extractTextFromSelectors(page, item, [
-                '.comment-text', '.description', '.comment'
-              ]);
-              if (ball || text || result) {
-                commentary.push({ ball: ball || '', result: result || '', text: text || '' });
-              }
-            }
-            if (commentary.length > 0) break;
-          }
-        }
-        if (commentary.length > 0) break;
-      } catch (e) {}
-    }
-    return commentary;
-  }
-
-  // ============================================================
-  // EXTRACT PREDICTION
-  // ============================================================
-  async extractPrediction(page) {
-    const prediction = { home_probability: null, away_probability: null, projected_scores: [] };
-    try {
-      const displayFlex = await page.$('.displayFlex');
-      if (displayFlex) {
-        const percentageElements = await displayFlex.$$('.percentageScreenText');
-        const percentages = [];
-        for (const el of percentageElements) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) {
-            const num = parseInt(text.replace('%', ''));
-            if (!isNaN(num)) percentages.push(num);
-          }
-        }
-        if (percentages.length >= 2) {
-          prediction.home_probability = percentages[0];
-          prediction.away_probability = percentages[1];
-        }
-      }
-    } catch (error) {}
-    return prediction;
-  }
-
-  // ============================================================
-  // HELPER: EXTRACT TEXT FROM SELECTORS
-  // ============================================================
-  async extractTextFromSelectors(page, element, selectors) {
-    for (const selector of selectors) {
-      try {
-        const el = await element.$(selector);
-        if (el) {
-          const text = await page.evaluate(el => el.textContent.trim(), el);
-          if (text) return text;
-        }
-      } catch (e) {}
-    }
-    return '';
-  }
-
-  // ============================================================
-  // GET TEAM ID FROM NAME
-  // ============================================================
-  getTeamId(teamName) {
-    if (!teamName) return `team_${Date.now()}`;
-    for (const [name, id] of Object.entries(this.teamIdMap)) {
-      if (teamName.includes(name) || name.includes(teamName)) {
-        return id;
-      }
-    }
-    const cleanName = teamName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    return `team_${cleanName}`;
-  }
-
-  // ============================================================
-  // LOG STATISTICS
-  // ============================================================
-  logStatistics() {
-    logger.info(`📊 Live Scraper Statistics:`);
-    logger.info(`   Discovered: ${this.stats.discovered}`);
-    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
-    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
-    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
-    logger.info(`   Errors: ${this.stats.errors}`);
-    logger.info(`   Total Requests: ${this.requestCount}`);
-    logger.info(`   Success rate: ${this.stats.discovered > 0 ? Math.round((this.stats.detailed / this.stats.discovered) * 100) : 0}%`);
   }
 }
 

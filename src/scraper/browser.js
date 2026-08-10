@@ -7,14 +7,23 @@ const path = require('path');
 
 class BrowserManager {
   constructor() {
+    // ⭐ SINGLE BROWSER INSTANCE - Only ONE Chrome
     this.browser = null;
     this.context = null;
     this.isReady = false;
+    this.isLaunching = false;
+    this.launchPromise = null;
+    
     this.maxRetries = 3;
     this.requestCount = 0;
     this.lastRequestTime = 0;
     this.proxyList = [];
     this.currentProxyIndex = 0;
+    
+    // ⭐ Track all open pages/tabs
+    this.pages = new Map();
+    this.pageCounter = 0;
+    
     this.userAgents = [
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -27,7 +36,16 @@ class BrowserManager {
     ];
     this.currentUserAgentIndex = 0;
     
-    // Load proxies if available
+    // ⭐ Stats
+    this.stats = {
+      launches: 0,
+      closures: 0,
+      pagesCreated: 0,
+      pagesClosed: 0,
+      errors: 0,
+      activePages: 0,
+    };
+    
     this.loadProxies();
   }
 
@@ -61,19 +79,46 @@ class BrowserManager {
     return ua;
   }
 
+  // ============================================================
+  // ⭐ LAUNCH SINGLE BROWSER INSTANCE
+  // ============================================================
   async launch() {
+    // If browser is already ready, return
+    if (this.isReady && this.browser && this.browser.isConnected()) {
+      logger.debug('Browser already launched and ready');
+      return this.browser;
+    }
+
+    // If currently launching, wait for it
+    if (this.isLaunching && this.launchPromise) {
+      logger.debug('Browser launch already in progress, waiting...');
+      return this.launchPromise;
+    }
+
+    // Start launching
+    this.isLaunching = true;
+    this.launchPromise = this._launchBrowser();
+    
     try {
-      if (this.browser && this.isReady && this.browser.isConnected()) {
-        logger.debug('Browser already launched and ready');
-        return this.browser;
-      }
+      const result = await this.launchPromise;
+      return result;
+    } finally {
+      this.isLaunching = false;
+      this.launchPromise = null;
+    }
+  }
 
+  async _launchBrowser() {
+    try {
       // Close existing browser if any
-      if (this.browser) {
-        await this.close();
+      if (this.browser && this.browser.isConnected()) {
+        logger.info('Closing existing browser instance...');
+        await this.browser.close();
+        this.browser = null;
+        this.context = null;
       }
 
-      logger.info('Launching browser with stealth settings...');
+      logger.info('🚀 Launching SINGLE browser instance...');
 
       const userAgent = this.getRandomUserAgent();
       const proxy = this.getNextProxy();
@@ -124,7 +169,9 @@ class BrowserManager {
         ignoreDefaultArgs: ['--enable-automation']
       };
 
+      // ⭐ Launch SINGLE browser
       this.browser = await playwright.chromium.launch(launchOptions);
+      this.stats.launches++;
 
       // Context options with proxy if available
       const contextOptions = {
@@ -167,23 +214,126 @@ class BrowserManager {
         logger.info(`Using proxy: ${proxy}`);
       }
 
+      // ⭐ Create SINGLE context
       this.context = await this.browser.newContext(contextOptions);
+      this.stats.activePages = 0;
 
       // Add stealth scripts
       await this.addStealthScripts();
 
       this.isReady = true;
-      logger.info(`Browser launched successfully with user agent: ${userAgent}${proxy ? ` and proxy: ${proxy}` : ''}`);
+      logger.info(`✅ SINGLE browser launched successfully`);
+      logger.info(`   User Agent: ${userAgent}`);
+      logger.info(`   Proxy: ${proxy || 'Direct connection'}`);
+      logger.info(`   Browser Version: ${await this.browser.version()}`);
 
+      // Monitor browser
       this.monitorBrowser();
+      
       return this.browser;
     } catch (error) {
-      logger.error('Browser launch failed:', error);
-      await this.close();
+      logger.error(`❌ Failed to launch browser: ${error.message}`);
+      this.stats.errors++;
+      this.isReady = false;
+      this.browser = null;
+      this.context = null;
       throw error;
     }
   }
 
+  // ============================================================
+  // ⭐ CREATE A NEW TAB (Page)
+  // ============================================================
+  async createPage() {
+    try {
+      // Ensure browser is launched
+      if (!this.isReady || !this.context) {
+        await this.launch();
+      }
+
+      // ⭐ Create a new page (tab) in the same context
+      const page = await this.context.newPage();
+      this.pageCounter++;
+      const pageId = `tab_${this.pageCounter}`;
+      
+      this.pages.set(pageId, {
+        page: page,
+        createdAt: Date.now(),
+        url: null,
+      });
+      
+      this.stats.pagesCreated++;
+      this.stats.activePages = this.pages.size;
+      
+      logger.debug(`✅ Created new tab: ${pageId} (total tabs: ${this.pages.size})`);
+      
+      return page;
+    } catch (error) {
+      logger.error(`❌ Failed to create page: ${error.message}`);
+      this.stats.errors++;
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // ⭐ CLOSE A TAB (Page)
+  // ============================================================
+  async closePage(page) {
+    if (!page) return false;
+    
+    try {
+      if (!page.isClosed()) {
+        await page.close();
+        this.stats.pagesClosed++;
+        
+        // Remove from tracking
+        for (const [id, data] of this.pages) {
+          if (data.page === page) {
+            this.pages.delete(id);
+            break;
+          }
+        }
+        
+        this.stats.activePages = this.pages.size;
+        logger.debug(`✅ Closed tab (active tabs: ${this.pages.size})`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      logger.warn(`⚠️ Error closing page: ${error.message}`);
+      return false;
+    }
+  }
+
+  // ============================================================
+  // ⭐ GET PAGE BY ID
+  // ============================================================
+  getPage(pageId) {
+    const data = this.pages.get(pageId);
+    return data ? data.page : null;
+  }
+
+  // ============================================================
+  // ⭐ GET ALL ACTIVE PAGES
+  // ============================================================
+  getActivePages() {
+    const activePages = [];
+    for (const [id, data] of this.pages) {
+      if (!data.page.isClosed()) {
+        activePages.push({
+          id: id,
+          page: data.page,
+          url: data.url,
+          createdAt: data.createdAt,
+        });
+      }
+    }
+    return activePages;
+  }
+
+  // ============================================================
+  // ⭐ ADD STEALTH SCRIPTS
+  // ============================================================
   async addStealthScripts() {
     await this.context.addInitScript(() => {
       // Override navigator properties
@@ -247,18 +397,12 @@ class BrowserManager {
         }
         originalConsoleLog.apply(console, arguments);
       };
-      
-      // Override document.querySelector to hide automation
-      const originalQuerySelector = document.querySelector;
-      document.querySelector = function(selector) {
-        if (selector === 'html' || selector === 'body') {
-          return originalQuerySelector.call(this, selector);
-        }
-        return originalQuerySelector.call(this, selector);
-      };
     });
   }
 
+  // ============================================================
+  // ⭐ MONITOR BROWSER
+  // ============================================================
   monitorBrowser() {
     if (this.browser) {
       this.browser.on('disconnected', async () => {
@@ -275,6 +419,9 @@ class BrowserManager {
     }
   }
 
+  // ============================================================
+  // ⭐ RESTART BROWSER
+  // ============================================================
   async restart() {
     let attempts = 0;
     while (attempts < this.maxRetries) {
@@ -293,14 +440,15 @@ class BrowserManager {
     logger.error('Browser restart failed after max retries');
   }
 
+  // ============================================================
+  // ⭐ ACCEPT CONSENT
+  // ============================================================
   async acceptConsent(page) {
     try {
       logger.info('Attempting to accept consent...');
 
-      // Wait for consent overlay to load
       await page.waitForTimeout(2000);
 
-      // Strategy 1: Try OneTrust specific selectors
       const oneTrustSelectors = [
         '#onetrust-accept-btn-handler',
         '#onetrust-close-btn-container button',
@@ -328,7 +476,6 @@ class BrowserManager {
         }
       }
 
-      // Strategy 2: Try all buttons with accept text
       const result = await page.evaluate(() => {
         const buttons = document.querySelectorAll(
           'button, [role="button"], .btn, [class*="button"], input[type="submit"]'
@@ -361,28 +508,6 @@ class BrowserManager {
         return true;
       }
 
-      // Strategy 3: Try clicking any visible button
-      const anyButton = await page.evaluate(() => {
-        const buttons = document.querySelectorAll('button, [role="button"]');
-        for (const btn of buttons) {
-          if (btn.offsetParent !== null && btn.textContent && btn.textContent.length > 0) {
-            const text = btn.textContent.trim();
-            if (text.length < 20) {
-              btn.click();
-              return text;
-            }
-          }
-        }
-        return null;
-      });
-
-      if (anyButton) {
-        logger.info(`✅ Clicked visible button: "${anyButton}"`);
-        await page.waitForTimeout(2000);
-        return true;
-      }
-
-      // Strategy 4: Set cookies directly
       await page.evaluate(() => {
         const cookies = [
           'cookieconsent_status=allow; path=/; domain=.espncricinfo.com',
@@ -399,8 +524,6 @@ class BrowserManager {
 
       logger.info('✅ Set consent cookies');
       await page.waitForTimeout(2000);
-
-      // Reload to apply cookies
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(3000);
 
@@ -411,7 +534,12 @@ class BrowserManager {
     }
   }
 
+  // ============================================================
+  // ⭐ GET PAGE WITH NAVIGATION
+  // ============================================================
   async getPage(url, options = {}) {
+    let page = null;
+    
     try {
       // Rate limiting
       await this.rateLimit();
@@ -420,11 +548,11 @@ class BrowserManager {
         await this.launch();
       }
 
-      const page = await this.context.newPage();
+      // ⭐ Create a new tab
+      page = await this.createPage();
       page.setDefaultTimeout(45000);
       page.setDefaultNavigationTimeout(45000);
 
-      // Add random delay before navigation
       await this.delay(Math.random() * 1000 + 500);
 
       let attempts = 0;
@@ -432,7 +560,6 @@ class BrowserManager {
 
       while (attempts < this.maxRetries) {
         try {
-          // Random referrer
           const referrers = [
             'https://www.google.com/',
             'https://www.bing.com/',
@@ -446,17 +573,13 @@ class BrowserManager {
             'Referer': referrers[Math.floor(Math.random() * referrers.length)]
           });
 
-          // Navigate with networkidle for better loading
           const response = await page.goto(url, {
             waitUntil: options.waitUntil || 'domcontentloaded',
             timeout: options.timeout || 30000,
           });
 
-          // Check for 403
           if (response && response.status() === 403) {
             logger.warn(`⚠️ 403 Forbidden for ${url}`);
-            
-            // Try rotating user agent
             const newUA = this.getRandomUserAgent();
             await this.context.setExtraHTTPHeaders({
               'User-Agent': newUA
@@ -483,11 +606,9 @@ class BrowserManager {
             throw new Error(`HTTP ${response.status()}`);
           }
 
-          // Wait for page to be interactive
           await page.waitForLoadState('domcontentloaded');
           await this.delay(2000);
 
-          // Check for consent page
           const bodyText = await page.textContent('body').catch(() => '');
           if (
             bodyText &&
@@ -501,8 +622,15 @@ class BrowserManager {
             await this.acceptConsent(page);
           }
 
-          // Simulate human behavior
           await this.simulateHumanBehavior(page);
+
+          // Update page tracking with URL
+          for (const [id, data] of this.pages) {
+            if (data.page === page) {
+              data.url = url;
+              break;
+            }
+          }
 
           return page;
         } catch (error) {
@@ -520,7 +648,6 @@ class BrowserManager {
               await this.restart();
             }
             
-            // Rotate proxy if available
             if (error.message.includes('403') || error.message.includes('Access Denied')) {
               const proxy = this.getNextProxy();
               if (proxy) {
@@ -535,13 +662,18 @@ class BrowserManager {
       throw lastError || new Error(`Failed to navigate to ${url} after ${this.maxRetries} attempts`);
     } catch (error) {
       logger.error('Page creation failed:', { url, error: error.message });
+      if (page) {
+        await this.closePage(page);
+      }
       throw error;
     }
   }
 
+  // ============================================================
+  // ⭐ SIMULATE HUMAN BEHAVIOR
+  // ============================================================
   async simulateHumanBehavior(page) {
     try {
-      // Random scroll
       await page.evaluate(() => {
         const scrollHeight = document.documentElement.scrollHeight;
         const scrollStep = Math.floor(Math.random() * 300) + 50;
@@ -555,7 +687,6 @@ class BrowserManager {
         }
       });
 
-      // Random mouse movements
       for (let i = 0; i < 3; i++) {
         await page.mouse.move(
           Math.floor(Math.random() * 800) + 100,
@@ -570,10 +701,13 @@ class BrowserManager {
     }
   }
 
+  // ============================================================
+  // ⭐ RATE LIMITING
+  // ============================================================
   async rateLimit() {
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
-    const minDelay = 2000; // 2 seconds minimum between requests
+    const minDelay = 2000;
     
     if (timeSinceLastRequest < minDelay) {
       const waitTime = minDelay - timeSinceLastRequest + Math.random() * 1000;
@@ -585,30 +719,9 @@ class BrowserManager {
     this.lastRequestTime = Date.now();
   }
 
-  async closePage(page) {
-    try {
-      if (page && !page.isClosed()) {
-        await page.close();
-      }
-    } catch (error) {
-      // Ignore
-    }
-  }
-
-  async close() {
-    try {
-      if (this.browser) {
-        await this.browser.close();
-        this.browser = null;
-        this.context = null;
-        this.isReady = false;
-        logger.info('Browser closed');
-      }
-    } catch (error) {
-      logger.error('Browser close failed:', error);
-    }
-  }
-
+  // ============================================================
+  // ⭐ EXECUTE SCRAPE
+  // ============================================================
   async executeScrape(url, scrapeFn, options = {}) {
     let page = null;
     let attempts = 0;
@@ -648,10 +761,56 @@ class BrowserManager {
     throw new Error(`Scrape failed after ${maxRetries} attempts: ${url}`);
   }
 
-  async delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  // ============================================================
+  // ⭐ CLOSE SINGLE BROWSER
+  // ============================================================
+  async close() {
+    try {
+      // Close all pages first
+      for (const [id, data] of this.pages) {
+        try {
+          if (!data.page.isClosed()) {
+            await data.page.close();
+          }
+        } catch (e) {}
+      }
+      this.pages.clear();
+      this.stats.activePages = 0;
+
+      if (this.browser && this.browser.isConnected()) {
+        logger.info('🔄 Closing SINGLE browser instance...');
+        await this.browser.close();
+        this.stats.closures++;
+      }
+      
+      this.browser = null;
+      this.context = null;
+      this.isReady = false;
+      this.isLaunching = false;
+      this.launchPromise = null;
+      
+      logger.info('✅ SINGLE browser instance closed');
+      return true;
+    } catch (error) {
+      logger.error(`❌ Error closing browser: ${error.message}`);
+      this.browser = null;
+      this.context = null;
+      this.isReady = false;
+      return false;
+    }
   }
 
+  // ============================================================
+  // ⭐ DELAY
+  // ============================================================
+  async delay(ms, maxMs) {
+    const actualMs = maxMs ? Math.floor(Math.random() * (maxMs - ms) + ms) : ms;
+    return new Promise((resolve) => setTimeout(resolve, actualMs));
+  }
+
+  // ============================================================
+  // ⭐ HEALTH CHECK
+  // ============================================================
   async healthCheck() {
     try {
       if (!this.isReady || !this.browser || !this.browser.isConnected()) {
@@ -668,17 +827,58 @@ class BrowserManager {
     }
   }
 
-  // Get statistics
+  // ============================================================
+  // ⭐ GET STATS
+  // ============================================================
   getStats() {
     return {
-      requestCount: this.requestCount,
+      ...this.stats,
       isReady: this.isReady,
+      isLaunching: this.isLaunching,
+      activePages: this.pages.size,
+      requestCount: this.requestCount,
       proxyCount: this.proxyList.length,
       currentProxy: this.proxyList[this.currentProxyIndex] || 'none',
-      userAgent: this.userAgents[this.currentUserAgentIndex] || 'unknown'
+      userAgent: this.userAgents[this.currentUserAgentIndex] || 'unknown',
+      browserConnected: this.browser ? this.browser.isConnected() : false,
     };
+  }
+
+  // ============================================================
+  // ⭐ GET BROWSER INFO
+  // ============================================================
+  async getBrowserInfo() {
+    try {
+      if (!this.browser || !this.browser.isConnected()) {
+        return null;
+      }
+      return {
+        version: await this.browser.version(),
+        isConnected: this.browser.isConnected(),
+        pages: this.pages.size,
+        stats: this.getStats(),
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // ============================================================
+  // ⭐ CLOSE ALL PAGES EXCEPT MAIN
+  // ============================================================
+  async closeAllPages() {
+    for (const [id, data] of this.pages) {
+      try {
+        if (!data.page.isClosed()) {
+          await data.page.close();
+        }
+      } catch (e) {}
+    }
+    this.pages.clear();
+    this.stats.activePages = 0;
+    logger.info('✅ All pages closed');
   }
 }
 
-// Export singleton
+// ⭐ EXPORT SINGLETON - ONLY ONE INSTANCE
 module.exports = new BrowserManager();

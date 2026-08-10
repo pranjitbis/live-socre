@@ -2,3 +2,111 @@ make are the website like ai base using gemini api key like showing the romincti
 and copy btn are user for copy the prompt 
 
 and  use upload btn for the user are upload the user are image then generate image and use llm if this image are add tow photo then if user are include one photo then showing one photo is missing this are for seftie for dont wast the user time   
+
+
+
+
+
+
+{
+"success": true,
+"source": "crex",
+"type": "live",
+"total": 1,
+"data": [
+{
+"match_id": "bp-vs-srl-24th-match-the-hundred-2026-men-match-updates-ZL2",
+"match_url": "https://crex.com/cricket-live-score/bp-vs-srl-24th-match-the-hundred-2026-men-match-updates-ZL2",
+"series": {
+"id": "series_1786129023060",
+"name": "BP vs SRL,  24th 100B, The Hundred 2026 live",
+"short_name": "BP vs SRL,  24th 100",
+"season": "2026"
+},
+"match": {
+"number": "24th 100B",
+"format": "The Hundred",
+"status": "Live",
+"start_time": "2026-08-07T18:57:03.060Z",
+"current_innings": "",
+"current_ball": ""
+},
+"venue": {
+"id": "venue_1786129023060",
+"name": "TBD"
+},
+"teams": {
+"home": {
+"id": "team_bp_w",
+"name": "BP-W",
+"short_name": "SRL",
+"logo": "https://cricketvectors.akamaized.net/Teams/86.png"
+},
+"away": {
+"id": "team_bp_w",
+"name": "BP-W",
+"short_name": "BP",
+"logo": "https://cricketvectors.akamaized.net/Teams/83.png"
+}
+},
+"scoreboard": {
+"batting_team": {
+"name": "BP-W",
+"score": "169",
+"runs": null,
+"wickets": null,
+"overs": ""
+},
+"bowling_team": {
+"name": "BP-W",
+"score": "",
+"runs": null,
+"wickets": null,
+"overs": ""
+},
+"target": null,
+"required_runs": null,
+"required_balls": null,
+"crr": null,
+"rrr": null,
+"current_ball": ""
+},
+"current_batsmen": [],
+"current_bowler": {
+"name": "Jordan Thompson",
+"overs": "20",
+"runs": 38,
+"wickets": 1
+},
+"overs": [],
+"commentary": [],
+"prediction": {
+"home_probability": null,
+"away_probability": null,
+"projected_scores": []
+},
+"toss": {
+"status": "Not Started"
+},
+"result": "Innings Break",
+"weather": {
+"temperature": 36.6,
+"feels_like": 42.2,
+"humidity": 45,
+"wind_speed": 13.8,
+"condition": "Clear Sky",
+"rain_probability": 3,
+"weather_icon": "01d",
+"last_updated": "2026-08-07T18:57:03.775Z"
+},
+"countdown": null,
+"_lastUpdated": "2026-08-07T18:57:03.060Z",
+"_updateCount": 1
+}
+],
+"timestamp": "2026-08-07T18:57:06.592Z",
+"requestId": "1786129026583_o6bywr",
+"fromCache": true,
+"forceRefresh": true,
+"message": "Background refresh started - check WebSocket for updates"
+}
