@@ -1,29 +1,36 @@
 const express = require('express');
 const http = require('http');
-const https = require('https');
-const WebSocket = require('ws');
-const routes = require('./api/routes');
-const logger = require('./logger');
-const database = require('./database');
-const cache = require('./cache');
-const browserManager = require('./scraper/browser');
-const { scraperService } = require('./services/scraperService');
 const path = require('path');
 const fs = require('fs');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const WebSocket = require('ws');
 
 // Load environment variables
 require('dotenv').config();
 
+const routes = require('./api/routes');
+const logger = require('./logger');
+const database = require('./database');
+const cache = require('./cache');
+const browserManager = require('./scraper/browser');
+const { scraperService } = require('./services/scraperService');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WS_PORT = process.env.WS_PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
-const IS_HTTPS = process.env.USE_HTTPS === 'true' || false;
+
+// ⭐ Auto-detect HTTPS based on environment
+const IS_HTTPS = process.env.USE_HTTPS === 'true' || 
+                 process.env.RAILWAY_ENVIRONMENT === 'production' ||
+                 process.env.RENDER === 'true' ||
+                 process.env.HEROKU_APP_NAME !== undefined ||
+                 process.env.VERCEL === '1';
+
+logger.info(`🔒 HTTPS mode: ${IS_HTTPS ? 'Enabled' : 'Disabled'}`);
 
 // ============================================================
 // ENSURE DIRECTORIES EXIST
@@ -194,6 +201,7 @@ app.get('/', (req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
+    const protocol = IS_HTTPS ? 'wss' : 'ws';
     res.json({
       name: 'Cricket Scraper Framework',
       version: require('../package.json').version || '1.0.0',
@@ -203,10 +211,11 @@ app.get('/', (req, res) => {
       https: IS_HTTPS,
       uptime: process.uptime(),
       websocket: {
-        protocol: IS_HTTPS ? 'wss' : 'ws',
+        protocol: protocol,
         path: '/ws',
         port: PORT,
-        url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+        url: `${protocol}://${req.get('host') || 'localhost'}/ws`,
+        autoDetect: true,
       },
       endpoints: {
         health: '/health',
@@ -215,6 +224,7 @@ app.get('/', (req, res) => {
         live: '/api/live',
         broadcast: '/api/broadcast',
         ws: '/ws',
+        'ws-info': '/api/ws-info',
       },
       requestId: req.requestId,
     });
@@ -279,6 +289,7 @@ app.get('/health', async (req, res) => {
       path: '/ws',
       url: wsUrl,
       clients: wss ? wss.clients.size : 0,
+      autoDetect: true,
     },
     services: {
       database: dbHealth,
@@ -385,6 +396,7 @@ app.get('/health/websocket', (req, res) => {
     clients: wss ? wss.clients.size : 0,
     protocol: protocol,
     url: `${protocol}://${req.get('host') || 'localhost'}/ws`,
+    autoDetect: true,
     timestamp: new Date().toISOString(),
     requestId: req.requestId,
   });
@@ -414,6 +426,12 @@ app.get('/api/ws-info', (req, res) => {
         https: 'wss://',
       },
       connectionHelp: `Use ${wsUrl} for WebSocket connections`,
+      clientExample: `
+// Auto-detect WebSocket protocol
+const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsUrl = \`\${protocol}://\${window.location.host}/ws\`;
+const ws = new WebSocket(wsUrl);
+      `,
     },
     timestamp: new Date().toISOString(),
   });
@@ -428,13 +446,15 @@ app.get('/api/live', async (req, res) => {
     const result = await scraperService.scrapeLive(true);
 
     if (result && result.success) {
+      const protocol = IS_HTTPS ? 'wss' : 'ws';
       res.json({
         success: true,
         data: result.data || [],
         total: result.total || 0,
         timestamp: new Date().toISOString(),
         websocket: {
-          url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+          url: `${protocol}://${req.get('host') || 'localhost'}/ws`,
+          protocol: protocol,
         },
       });
     } else {
@@ -484,6 +504,7 @@ app.post('/api/broadcast', async (req, res) => {
 
         logger.info(`📡 Broadcast ${result.data.length} live matches to ${clientsSent} clients`);
 
+        const protocol = IS_HTTPS ? 'wss' : 'ws';
         res.json({
           success: true,
           message: `Broadcast ${result.data.length} live matches to ${clientsSent} clients`,
@@ -491,7 +512,8 @@ app.post('/api/broadcast', async (req, res) => {
           matches: result.data.length,
           timestamp: new Date().toISOString(),
           websocket: {
-            url: `${IS_HTTPS ? 'wss' : 'ws'}://${req.get('host') || 'localhost'}/ws`,
+            url: `${protocol}://${req.get('host') || 'localhost'}/ws`,
+            protocol: protocol,
           },
         });
       } else {
@@ -613,8 +635,7 @@ app.post('/api/scrape/force-release', async (req, res) => {
 
 let server = null;
 let wss = null;
-const clients = new Map();
-let lastBroadcastData = null;
+const wsClients = new Map();
 let broadcastInterval = null;
 
 function broadcast(data, excludeClient = null) {
@@ -643,6 +664,7 @@ async function startRealTimeBroadcast() {
 
   broadcastInterval = setInterval(async () => {
     try {
+      // Force release any stuck locks
       if (scraperService.crexScrapers && scraperService.crexScrapers.live) {
         if (typeof scraperService.crexScrapers.live.ensureLockReleased === 'function') {
           await scraperService.crexScrapers.live.ensureLockReleased();
@@ -687,56 +709,60 @@ async function startRealTimeBroadcast() {
 
 function setupWebSocket() {
   try {
-    // ⭐ Handle WebSocket upgrade with protocol detection
-    const wsOptions = {
-      path: '/ws',
-      clientTracking: true,
-      maxPayload: 10 * 1024 * 1024,
-      // Handle upgrade with protocol detection
-      handleProtocols: (protocols, request) => {
-        // Check if client requested wss or ws
-        const isSecure =
-          request.headers['x-forwarded-proto'] === 'https' ||
-          request.headers['x-forwarded-ssl'] === 'on' ||
-          IS_HTTPS;
-
-        // Return the protocol that matches
-        if (isSecure) {
-          return 'wss';
-        }
-        return 'ws';
-      },
-    };
-
-    // ⭐ Create WebSocket server attached to the HTTP server
+    // ⭐ Create WebSocket server with auto-protocol detection
     wss = new WebSocket.Server({
       server,
       path: '/ws',
       clientTracking: true,
       maxPayload: 10 * 1024 * 1024,
+      // ⭐ Handle upgrade with protocol detection
+      handleProtocols: (protocols, request) => {
+        // Check if client requested secure connection
+        const isSecure =
+          request.headers['x-forwarded-proto'] === 'https' ||
+          request.headers['x-forwarded-ssl'] === 'on' ||
+          request.headers['x-forwarded-protocol'] === 'https' ||
+          IS_HTTPS;
+
+        // Log the connection attempt
+        logger.debug(`🔌 WebSocket connection attempt (Secure: ${isSecure})`);
+
+        // Return the protocol that matches
+        if (isSecure && protocols.has('wss')) {
+          return 'wss';
+        }
+        if (protocols.has('ws')) {
+          return 'ws';
+        }
+        // Default to the first available
+        return protocols.values().next().value || 'ws';
+      },
     });
 
-    logger.info(
-      `✅ WebSocket server initialized on ${IS_HTTPS ? 'wss' : 'ws'}://localhost:${PORT}/ws`
-    );
+    const protocol = IS_HTTPS ? 'wss' : 'ws';
+    logger.info(`✅ WebSocket server initialized on ${protocol}://localhost:${PORT}/ws`);
 
     wss.on('connection', (ws, req) => {
       const clientId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const ip = req.socket.remoteAddress || 'unknown';
 
-      // ⭐ Detect protocol
+      // ⭐ Detect protocol from request
       const isSecure =
         req.headers['x-forwarded-proto'] === 'https' ||
         req.headers['x-forwarded-ssl'] === 'on' ||
+        req.headers['x-forwarded-protocol'] === 'https' ||
+        req.connection.encrypted ||
         IS_HTTPS;
+
       const protocol = isSecure ? 'wss' : 'ws';
 
-      clients.set(clientId, {
+      wsClients.set(clientId, {
         ws,
         ip,
         connectedAt: new Date(),
         subscriptions: new Set(['live']),
         protocol: protocol,
+        secure: isSecure,
       });
 
       logger.info(`🔌 WebSocket client connected: ${clientId} (IP: ${ip}, Protocol: ${protocol})`);
@@ -747,12 +773,13 @@ function setupWebSocket() {
         data: {
           clientId,
           timestamp: new Date().toISOString(),
-          message: 'Connected to Cricket Scraper WebSocket Server',
+          message: `Connected to Cricket Scraper WebSocket Server via ${protocol}`,
           serverTime: new Date().toISOString(),
           totalClients: wss.clients.size,
           protocol: protocol,
           secure: isSecure,
           reconnect: true,
+          autoDetect: true,
         },
       });
 
@@ -805,6 +832,7 @@ function setupWebSocket() {
       // Send initial data after a small delay
       setTimeout(sendInitialData, 500);
 
+      // ⭐ Message handler
       ws.on('message', async (message) => {
         try {
           const data =
@@ -822,11 +850,13 @@ function setupWebSocket() {
         }
       });
 
+      // ⭐ Close handler
       ws.on('close', () => {
         logger.info(`🔌 WebSocket client disconnected: ${clientId}`);
-        clients.delete(clientId);
+        wsClients.delete(clientId);
       });
 
+      // ⭐ Error handler
       ws.on('error', (error) => {
         logger.error(`WebSocket error for ${clientId}:`, error.message);
       });
@@ -846,8 +876,12 @@ function setupWebSocket() {
   }
 }
 
+// ============================================================
+// WEBSOCKET MESSAGE HANDLER
+// ============================================================
+
 async function handleWebSocketMessage(ws, clientId, data) {
-  const client = clients.get(clientId);
+  const client = wsClients.get(clientId);
   if (!client) return;
 
   const { type, payload } = data;
@@ -867,6 +901,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
         data: {
           timestamp: new Date().toISOString(),
           protocol: client.protocol,
+          secure: client.secure,
         },
       });
       break;
@@ -887,6 +922,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
               matches: result.data,
               count: result.data.length,
               timestamp: new Date().toISOString(),
+              protocol: client.protocol,
             },
           });
         } else {
@@ -896,6 +932,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
               matches: [],
               count: 0,
               timestamp: new Date().toISOString(),
+              protocol: client.protocol,
             },
           });
         }
@@ -918,6 +955,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
           data: {
             message: 'Force scraping started',
             type: payload?.type || 'live',
+            timestamp: new Date().toISOString(),
           },
         });
 
@@ -933,6 +971,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
               matches: result.data,
               count: result.data.length,
               message: 'Force scrape completed',
+              timestamp: new Date().toISOString(),
             },
           });
         } else {
@@ -966,7 +1005,7 @@ async function handleWebSocketMessage(ws, clientId, data) {
 }
 
 function handleSubscribe(ws, clientId, payload) {
-  const client = clients.get(clientId);
+  const client = wsClients.get(clientId);
   if (!client) return;
 
   const topics = payload?.topics || ['live'];
@@ -979,6 +1018,7 @@ function handleSubscribe(ws, clientId, payload) {
     data: {
       topics: topics,
       timestamp: new Date().toISOString(),
+      protocol: client.protocol,
     },
   });
 
@@ -986,7 +1026,7 @@ function handleSubscribe(ws, clientId, payload) {
 }
 
 function handleUnsubscribe(ws, clientId, payload) {
-  const client = clients.get(clientId);
+  const client = wsClients.get(clientId);
   if (!client) return;
 
   const topics = payload?.topics || [];
@@ -1216,6 +1256,8 @@ const startServer = () => {
       logger.info(`🆔 Process ID: ${process.pid}`);
       logger.info(`💾 Memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`);
       logger.info(`🔒 HTTPS: ${IS_HTTPS ? 'Enabled' : 'Disabled'}`);
+      logger.info(`🔌 WebSocket Protocol: ${protocol}`);
+      logger.info(`🔄 Auto-Detect: Client will automatically use ${protocol} based on page protocol`);
       logger.info(`📡 Health Check: http://localhost:${PORT}/health`);
       logger.info(`📊 Dashboard: http://localhost:${PORT}/web-test`);
       logger.info(`📡 Live API: http://localhost:${PORT}/api/live`);
@@ -1230,7 +1272,7 @@ const startServer = () => {
       logger.info(`  GET  /api/live - Live matches API`);
       logger.info(`  POST /api/broadcast - Broadcast live matches to WebSocket clients`);
       logger.info(`  GET  /api/ws-status - WebSocket status`);
-      logger.info(`  GET  /api/ws-info - WebSocket connection info`);
+      logger.info(`  GET  /api/ws-info - WebSocket connection info with auto-detection`);
       logger.info(`  GET  /api/scrape/live - Scrape live matches`);
       logger.info(`  GET  /api/scrape/upcoming - Scrape upcoming matches`);
       logger.info(`  GET  /api/scrape/finished - Scrape finished matches`);
@@ -1241,19 +1283,22 @@ const startServer = () => {
       logger.info('='.repeat(80));
 
       logger.info('📡 WebSocket Events:');
+      logger.info(`  connection - Connection confirmation with protocol info`);
       logger.info(`  live:update - Live score updates (every 5 seconds)`);
       logger.info(`  live:new - New match started`);
       logger.info(`  live:complete - Match completed`);
       logger.info(`  match:update - Match data updated`);
       logger.info(`  score:update - Score updated`);
+      logger.info(`  subscribed - Subscription confirmation`);
+      logger.info(`  unsubscribed - Unsubscription confirmation`);
+      logger.info(`  pong - Ping response`);
+      logger.info(`  error - Error messages`);
       logger.info('='.repeat(80));
 
-      logger.info('🔌 WebSocket Connection:');
-      logger.info(`  Protocol: ${protocol}`);
-      logger.info(`  URL: ${wsUrl}`);
-      logger.info(
-        `  Auto-detect: Client will automatically use ${protocol} based on page protocol`
-      );
+      logger.info('🔌 WebSocket Connection Help:');
+      logger.info(`  Auto-detect: Use \`${protocol}\` based on page protocol`);
+      logger.info(`  Manual: Connect to ${wsUrl}`);
+      logger.info(`  Example: new WebSocket(\`\${window.location.protocol === 'https:' ? 'wss' : 'ws'}://\${window.location.host}/ws\`)`);
       logger.info('='.repeat(80));
 
       await initializeBrowser();
