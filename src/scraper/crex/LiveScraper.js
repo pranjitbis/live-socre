@@ -6,6 +6,7 @@ const util = require('util');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const browserManager = require('../browser');
 
 const deepLog = (label, data) => {
@@ -60,6 +61,9 @@ class LiveScraper extends BaseCrexScraper {
     this.scrapeStartTime = null;
     this.agentPages = new Map();
 
+    // ⭐ Use fallback by default (no browser required)
+    this.useFallback = true;
+
     // ⭐ IMPROVED LOCK MANAGEMENT
     this._isScraping = false;
     this._scrapeLockTime = null;
@@ -67,7 +71,7 @@ class LiveScraper extends BaseCrexScraper {
     this._scrapeId = null;
     this._scrapePromise = null;
     this._lastScrapeTime = 0;
-    this._minScrapeInterval = 5000; // 5 seconds minimum between scrapes
+    this._minScrapeInterval = 5000;
 
     this.geoCache = new Map();
     this.weatherCache = new Map();
@@ -285,7 +289,6 @@ class LiveScraper extends BaseCrexScraper {
 
   // ⭐ IMPROVED LOCK MANAGEMENT
   async acquireLock(scrapeId) {
-    // Check if enough time has passed since last scrape
     const now = Date.now();
     if (this._lastScrapeTime > 0 && now - this._lastScrapeTime < this._minScrapeInterval) {
       logger.debug(
@@ -297,7 +300,6 @@ class LiveScraper extends BaseCrexScraper {
     if (this._isScraping) {
       const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
       if (lockAge > 10000) {
-        // Lock is stale (>10 seconds), force release
         logger.warn(`⚠️ Stale lock detected (${Math.round(lockAge / 1000)}s old), force releasing`);
         this.forceReleaseLock();
       } else {
@@ -313,7 +315,6 @@ class LiveScraper extends BaseCrexScraper {
     this._scrapeId = scrapeId;
     this._lastScrapeTime = Date.now();
 
-    // Safety timeout - auto-release after 25 seconds
     if (this._scrapeTimeout) {
       clearTimeout(this._scrapeTimeout);
     }
@@ -805,7 +806,15 @@ class LiveScraper extends BaseCrexScraper {
     return userAgents[Math.floor(Math.random() * userAgents.length)];
   }
 
+  // ⭐ INITIALIZE BROWSER (with fallback)
   async initializeBrowser() {
+    // ⭐ If fallback is enabled, skip browser initialization entirely
+    if (this.useFallback) {
+      logger.info('🔄 Using fallback mode (no browser required)');
+      this.isBrowserInitialized = true;
+      return true;
+    }
+
     try {
       if (
         this.browserManager.isReady &&
@@ -838,8 +847,11 @@ class LiveScraper extends BaseCrexScraper {
       logger.info('✅ Browser initialized via shared manager');
       return true;
     } catch (error) {
-      logger.error(`Failed to initialize browser: ${error.message}`);
-      return false;
+      logger.warn(`⚠️ Browser initialization failed: ${error.message}`);
+      logger.info('🔄 Falling back to HTTP mode');
+      this.useFallback = true;
+      this.isBrowserInitialized = true;
+      return true;
     }
   }
 
@@ -2395,13 +2407,397 @@ class LiveScraper extends BaseCrexScraper {
     };
   }
 
+  // ⭐ FALLBACK: HTTP-based discovery (no browser required)
+  async fallbackDiscoverLiveMatches() {
+    try {
+      logger.info('🔍 Using fallback scraper (HTTP) for live matches...');
+
+      const response = await axios.get('https://crex.com/cricket-live-score', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 15000,
+      });
+
+      const $ = cheerio.load(response.data);
+      const matches = [];
+
+      // Find team tabs
+      const teamTabs = $('.team-tab, .team-innig, .c-2, .score-card, .match-card');
+
+      if (teamTabs.length > 0) {
+        const tabs = [];
+        teamTabs.each((i, el) => tabs.push($(el)));
+
+        for (let i = 0; i < tabs.length; i += 2) {
+          if (i + 1 < tabs.length) {
+            const homeEl = tabs[i];
+            const awayEl = tabs[i + 1];
+
+            const homeName = homeEl.find('.team-name, h2 .team-name, .name').first().text().trim();
+            const awayName = awayEl.find('.team-name, h2 .team-name, .name').first().text().trim();
+
+            if (homeName && awayName && homeName.length > 0 && awayName.length > 0) {
+              const homeScoreText = homeEl.find('.score-over, .runs, .score').first().text().trim();
+              const awayScoreText = awayEl.find('.score-over, .runs, .score').first().text().trim();
+
+              const homeScoreMatch = homeScoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
+              const awayScoreMatch = awayScoreText.match(/(\d+)\s*[-/]\s*(\d+)/);
+
+              const homeOverMatch = homeScoreText.match(/\(?\s*(\d+\.?\d*)\s*[bB]?\)?/);
+              const awayOverMatch = awayScoreText.match(/\(?\s*(\d+\.?\d*)\s*[bB]?\)?/);
+
+              let url = '';
+              const link = homeEl.find('a[href*="cricket-live-score"]');
+              if (link.length > 0) {
+                const href = link.attr('href');
+                if (href) {
+                  url = href.startsWith('http') ? href : `https://crex.com${href}`;
+                }
+              }
+
+              matches.push({
+                url: url || 'https://crex.com/cricket-live-score',
+                status: 'LIVE',
+                team1: {
+                  name: homeName,
+                  short: homeName.substring(0, 3).toUpperCase(),
+                  flag: '',
+                  score: homeScoreMatch ? homeScoreMatch[1] : '',
+                  wickets: homeScoreMatch ? homeScoreMatch[2] : '',
+                  overs: homeOverMatch ? homeOverMatch[1] : '',
+                },
+                team2: {
+                  name: awayName,
+                  short: awayName.substring(0, 3).toUpperCase(),
+                  flag: '',
+                  score: awayScoreMatch ? awayScoreMatch[1] : '',
+                  wickets: awayScoreMatch ? awayScoreMatch[2] : '',
+                  overs: awayOverMatch ? awayOverMatch[1] : '',
+                },
+                series: '',
+              });
+            }
+          }
+        }
+      }
+
+      // If no matches found, try alternative selectors
+      if (matches.length === 0) {
+        // Try to find team names from any elements
+        const teamNames = [];
+        $('.team-name, h2 .team-name, .name, .team').each((i, el) => {
+          const name = $(el).text().trim();
+          if (name && name.length > 0 && name.length < 20) {
+            teamNames.push(name);
+          }
+        });
+
+        // Try to find scores
+        const scores = [];
+        $('.score-over, .runs, .score, .team-score').each((i, el) => {
+          const text = $(el).text().trim();
+          const match = text.match(/(\d+)\s*[-/]\s*(\d+)/);
+          if (match) {
+            scores.push({ runs: match[1], wickets: match[2] });
+          }
+        });
+
+        if (teamNames.length >= 2) {
+          matches.push({
+            url: 'https://crex.com/cricket-live-score',
+            status: 'LIVE',
+            team1: {
+              name: teamNames[0],
+              short: teamNames[0].substring(0, 3).toUpperCase(),
+              flag: '',
+              score: scores[0]?.runs || '',
+              wickets: scores[0]?.wickets || '',
+              overs: '',
+            },
+            team2: {
+              name: teamNames[1],
+              short: teamNames[1].substring(0, 3).toUpperCase(),
+              flag: '',
+              score: scores[1]?.runs || '',
+              wickets: scores[1]?.wickets || '',
+              overs: '',
+            },
+            series: '',
+          });
+        }
+      }
+
+      logger.info(`✅ Fallback scraper found ${matches.length} matches`);
+      return matches;
+
+    } catch (error) {
+      logger.error(`❌ Fallback scraper error: ${error.message}`);
+      return [];
+    }
+  }
+
+  // ⭐ FALLBACK: HTTP-based match details (no browser required)
+  async fallbackGetMatchDetails(match) {
+    try {
+      logger.info(`📡 Fetching match details for ${match.team1.name} vs ${match.team2.name}`);
+
+      const response = await axios.get(match.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        timeout: 15000,
+      });
+
+      const $ = cheerio.load(response.data);
+
+      // Extract scoreboard
+      const scoreboard = {
+        batting_team: {
+          name: match.team1.name,
+          score: match.team1.score || '0',
+          runs: parseInt(match.team1.score) || 0,
+          wickets: parseInt(match.team1.wickets) || 0,
+          overs: match.team1.overs || ''
+        },
+        bowling_team: {
+          name: match.team2.name,
+          score: match.team2.score || '0',
+          runs: parseInt(match.team2.score) || 0,
+          wickets: parseInt(match.team2.wickets) || 0,
+          overs: match.team2.overs || ''
+        },
+        target: null,
+        crr: null,
+        rrr: null,
+      };
+
+      // Extract score from page
+      $('.score-over, .runs, .score').each((i, el) => {
+        const text = $(el).text().trim();
+        const scoreMatch = text.match(/(\d+)\s*[-/]\s*(\d+)/);
+        if (scoreMatch) {
+          const runs = parseInt(scoreMatch[1]);
+          const wickets = parseInt(scoreMatch[2]);
+          if (i === 0) {
+            scoreboard.batting_team.runs = runs;
+            scoreboard.batting_team.wickets = wickets;
+            scoreboard.batting_team.score = `${runs}-${wickets}`;
+          } else if (i === 1) {
+            scoreboard.bowling_team.runs = runs;
+            scoreboard.bowling_team.wickets = wickets;
+            scoreboard.bowling_team.score = `${runs}-${wickets}`;
+          }
+        }
+      });
+
+      // Extract target
+      $('.target, .match-target, .chase-target').each((i, el) => {
+        const text = $(el).text().trim();
+        const match = text.match(/(\d+)/);
+        if (match) scoreboard.target = parseInt(match[1]);
+      });
+
+      // Extract CRR/RRR
+      $('.crr, .current-run-rate').each((i, el) => {
+        const text = $(el).text().trim();
+        const match = text.match(/(\d+\.\d+)/);
+        if (match) scoreboard.crr = parseFloat(match[1]);
+      });
+      $('.rrr, .required-run-rate').each((i, el) => {
+        const text = $(el).text().trim();
+        const match = text.match(/(\d+\.\d+)/);
+        if (match) scoreboard.rrr = parseFloat(match[1]);
+      });
+
+      // Extract batsmen
+      const batsmen = [];
+      $('.batsmen-info-wrapper, .player-card-wrapper, .player-card, .batsman-item').each((i, el) => {
+        const name = $(el).find('.batsmen-name, .name, .player-name, a[href*="/player/"] p').first().text().trim();
+        if (name && batsmen.length < 2) {
+          const stats = $(el).find('.batsmen-score, .score, .runs').text().trim();
+          const runsMatch = stats.match(/(\d+)/);
+          const ballsMatch = stats.match(/\((\d+)\)/);
+          batsmen.push({
+            name: name,
+            runs: runsMatch ? runsMatch[1] : '0',
+            balls: ballsMatch ? ballsMatch[1] : '0',
+            is_striker: i === 0,
+          });
+        }
+      });
+
+      // Extract bowler
+      let bowler = { name: '', runs: null, wickets: null, balls: null };
+      $('.batsmen-score.bowler, .bowling-figures, .bowler-info').each((i, el) => {
+        const text = $(el).text().trim();
+        const figuresMatch = text.match(/(\d+)\s*[-/]\s*(\d+)\s*\(?\s*(\d+)\s*[bB]?\)?/);
+        if (figuresMatch) {
+          bowler.wickets = parseInt(figuresMatch[1]);
+          bowler.runs = parseInt(figuresMatch[2]);
+          bowler.balls = parseInt(figuresMatch[3]);
+          const nameEl = $(el).closest('.player-card, .player-info').find('.name, .player-name');
+          bowler.name = nameEl.text().trim() || 'Bowler';
+        }
+      });
+
+      // Extract overs timeline
+      const overs = [];
+      $('.overs-slide, .over-item, .overs-container .content').each((i, el) => {
+        const balls = [];
+        $(el).find('.over-ball, .ball, .ml-o-b-1').each((j, b) => {
+          let val = $(b).text().trim();
+          if (val) {
+            if (val === 'W' || val === 'w') val = 'W';
+            else if (val === 'wd') val = 'wd';
+            else if (val === 'nb') val = 'nb';
+            balls.push(val);
+          }
+        });
+        if (balls.length > 0) {
+          const overNum = $(el).find('.over-number, .over-title').text().trim();
+          overs.push({
+            over: overNum || String(i + 1),
+            balls: balls,
+            total: $(el).find('.total, .over-total').text().trim() || '',
+          });
+        }
+      });
+
+      // Extract commentary
+      const commentary = [];
+      const font1s = $('.font1');
+      const font3s = $('.font3');
+      const font1Texts = font1s.map((i, el) => $(el).text().trim()).get();
+      const font3Texts = font3s.map((i, el) => $(el).text().trim()).get();
+
+      for (let i = 0; i < Math.max(font1Texts.length, font3Texts.length); i++) {
+        const ball = i < font1Texts.length ? font1Texts[i] : '';
+        const text = i < font3Texts.length ? font3Texts[i] : '';
+        if (ball || text) {
+          commentary.push({ ball, text });
+        }
+      }
+
+      // Extract toss
+      let tossStatus = 'Not Started';
+      $('.toss-wrap p, .toss-wrap, [class*="toss"] p').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text.includes('won the toss')) {
+          tossStatus = text;
+        }
+      });
+
+      // Extract venue
+      let venue = 'TBD';
+      $('.venue, .match-venue, .venue-name, .location').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 3) {
+          venue = text;
+          return false;
+        }
+      });
+
+      // Extract series
+      let series = 'Live Match';
+      $('.series-name, .match-series, .series-title, .tournament').each((i, el) => {
+        const text = $(el).text().trim();
+        if (text && text.length > 0) {
+          series = text;
+          return false;
+        }
+      });
+
+      return {
+        match_id: `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        match_url: match.url,
+        series: {
+          id: `series_${Date.now()}`,
+          name: series,
+          short_name: series.substring(0, 20),
+          season: new Date().getFullYear().toString()
+        },
+        match: {
+          number: 'Match',
+          format: 'T20',
+          status: 'Live',
+          start_time: new Date().toISOString(),
+          current_innings: '',
+          current_ball: '',
+        },
+        venue: { id: `venue_${Date.now()}`, name: venue },
+        teams: {
+          home: {
+            id: this.getTeamId(match.team1.name),
+            name: match.team1.name,
+            short_name: match.team1.short,
+            logo: ''
+          },
+          away: {
+            id: this.getTeamId(match.team2.name),
+            name: match.team2.name,
+            short_name: match.team2.short,
+            logo: ''
+          },
+        },
+        scoreboard: scoreboard,
+        current_batsmen: batsmen,
+        current_bowler: bowler,
+        overs: overs,
+        commentary: commentary,
+        prediction: { home_probability: null, away_probability: null },
+        toss: { status: tossStatus },
+        result: null,
+        weather: null,
+        countdown: null,
+        _lastUpdated: new Date().toISOString(),
+        _updateCount: 1,
+      };
+
+    } catch (error) {
+      logger.error(`❌ Fallback match details error: ${error.message}`);
+      return this.createFallbackMatch(match);
+    }
+  }
+
+  // ⭐ PROCESS WITH AGENTS (with fallback support)
   async processWithAgents(discoveredMatches) {
-    logger.info('🤖 Starting Agent-based processing with 4 agents...');
+    logger.info('🤖 Starting Agent-based processing...');
 
     if (!discoveredMatches || discoveredMatches.length === 0) {
       return [];
     }
 
+    // ⭐ If fallback is enabled, process directly without browser
+    if (this.useFallback) {
+      const results = [];
+      for (let i = 0; i < discoveredMatches.length; i++) {
+        const match = discoveredMatches[i];
+        logger.info(`   Processing: ${match.team1.name} vs ${match.team2.name}`);
+
+        try {
+          const matchData = await this.fallbackGetMatchDetails(match);
+          if (matchData) {
+            results.push(matchData);
+          } else {
+            results.push(this.createFallbackMatch(match));
+          }
+        } catch (error) {
+          logger.error(`   ❌ Error: ${error.message}`);
+          results.push(this.createFallbackMatch(match));
+        }
+
+        if (i < discoveredMatches.length - 1) {
+          await this.sleep(1000);
+        }
+      }
+      return results;
+    }
+
+    // Original browser-based agent processing
     if (!this.context) {
       await this.initializeBrowser();
       if (!this.context) {
@@ -2448,36 +2844,24 @@ class LiveScraper extends BaseCrexScraper {
     return allMatches;
   }
 
-  logAgentStatistics() {
-    if (Object.keys(this.agentStats).length === 0) return;
-
-    logger.info(`   🤖 Agent Stats:`);
-    for (const [agentId, stats] of Object.entries(this.agentStats)) {
-      const successRate = stats.total > 0 ? Math.round((stats.succeeded / stats.total) * 100) : 0;
-      logger.info(`      ${agentId}: ${stats.succeeded}/${stats.total} (${successRate}%)`);
-    }
-  }
-
-  logStatistics() {
-    logger.info(`📊 Live Scraper Statistics:`);
-    logger.info(`   Discovered: ${this.stats.discovered}`);
-    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
-    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
-    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
-    logger.info(`   Errors: ${this.stats.errors}`);
-  }
-
+  // ⭐ DISCOVER LIVE MATCHES (with fallback)
   async discoverLiveMatches() {
     logger.info('🔍 Phase 1: Discovering live matches...');
 
+    // ⭐ Use fallback if enabled
+    if (this.useFallback) {
+      return await this.fallbackDiscoverLiveMatches();
+    }
+
+    // Original browser-based discovery
     const url = this.selectors.PAGE_URL || 'https://crex.com/cricket-live-score';
 
     if (!this.isBrowserInitialized || !this.page || this.page.isClosed()) {
       logger.warn('⚠️ Browser not initialized, initializing now...');
       await this.initializeBrowser();
       if (!this.page) {
-        logger.error('❌ Failed to initialize page');
-        return [];
+        logger.warn('⚠️ Browser page not available, using fallback');
+        return await this.fallbackDiscoverLiveMatches();
       }
     }
 
@@ -2503,7 +2887,7 @@ class LiveScraper extends BaseCrexScraper {
 
       if (!navSuccess) {
         logger.error('❌ Failed to navigate after 2 attempts');
-        return [];
+        return await this.fallbackDiscoverLiveMatches();
       }
 
       await this.sleep(2000);
@@ -2513,14 +2897,14 @@ class LiveScraper extends BaseCrexScraper {
           timeout: 8000,
         });
       } catch (e) {
-        logger.warn('⚠️ No match indicators found, waiting for page to settle...');
-        await this.sleep(3000);
+        logger.warn('⚠️ No match indicators found, using fallback');
+        return await this.fallbackDiscoverLiveMatches();
       }
 
       await this.sleep(1000);
     } catch (error) {
       logger.error(`❌ Failed to load live matches page: ${error.message}`);
-      return [];
+      return await this.fallbackDiscoverLiveMatches();
     }
 
     const selectors = [
@@ -2556,8 +2940,8 @@ class LiveScraper extends BaseCrexScraper {
     }
 
     if (foundCards.length === 0) {
-      logger.warn('❌ No live match cards found with any selector');
-      return [];
+      logger.warn('❌ No live match cards found, using fallback');
+      return await this.fallbackDiscoverLiveMatches();
     }
 
     try {
@@ -2851,9 +3235,9 @@ class LiveScraper extends BaseCrexScraper {
         return matches;
       }, foundCards);
 
-      if (!discoveredMatches || !Array.isArray(discoveredMatches)) {
-        logger.warn('⚠️ discoverLiveMatches returned undefined or null, returning empty array');
-        return [];
+      if (!discoveredMatches || !Array.isArray(discoveredMatches) || discoveredMatches.length === 0) {
+        logger.warn('⚠️ No matches discovered, using fallback');
+        return await this.fallbackDiscoverLiveMatches();
       }
 
       logger.info(`✅ Discovered ${discoveredMatches.length} live matches`);
@@ -2869,13 +3253,31 @@ class LiveScraper extends BaseCrexScraper {
       return discoveredMatches;
     } catch (error) {
       logger.error(`❌ Error in discoverLiveMatches evaluate: ${error.message}`);
-      return [];
+      return await this.fallbackDiscoverLiveMatches();
     }
+  }
+
+  logAgentStatistics() {
+    if (Object.keys(this.agentStats).length === 0) return;
+
+    logger.info(`   🤖 Agent Stats:`);
+    for (const [agentId, stats] of Object.entries(this.agentStats)) {
+      const successRate = stats.total > 0 ? Math.round((stats.succeeded / stats.total) * 100) : 0;
+      logger.info(`      ${agentId}: ${stats.succeeded}/${stats.total} (${successRate}%)`);
+    }
+  }
+
+  logStatistics() {
+    logger.info(`📊 Live Scraper Statistics:`);
+    logger.info(`   Discovered: ${this.stats.discovered}`);
+    logger.info(`   Detailed extracted: ${this.stats.detailed}`);
+    logger.info(`   Weather Success: ${this.stats.weatherSuccess}`);
+    logger.info(`   Weather Failed: ${this.stats.weatherFailed}`);
+    logger.info(`   Errors: ${this.stats.errors}`);
   }
 
   // ⭐ MAIN SCRAPE METHOD WITH IMPROVED LOCKING
   async scrapeLive(forceRefresh = true) {
-    // Check if already scraping
     if (this._isScraping) {
       const lockAge = Date.now() - (this._scrapeLockTime || Date.now());
       if (lockAge < 10000) {
@@ -2902,7 +3304,6 @@ class LiveScraper extends BaseCrexScraper {
 
     const scrapeId = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    // Acquire lock
     const lockAcquired = await this.acquireLock(scrapeId);
     if (!lockAcquired) {
       if (this._scrapePromise) {
@@ -2921,7 +3322,6 @@ class LiveScraper extends BaseCrexScraper {
       };
     }
 
-    // Create promise for this scrape
     this._scrapePromise = this._executeScrape(scrapeId);
 
     try {
@@ -2942,20 +3342,9 @@ class LiveScraper extends BaseCrexScraper {
       logger.info(`🚀 [${scrapeId}] Starting live matches scraper`);
 
       const browserOk = await this.initializeBrowser();
-      if (!browserOk || !this.page) {
-        logger.error(`❌ [${scrapeId}] Failed to initialize browser`);
-        this.forceReleaseLock();
-        return {
-          success: false,
-          source: 'crex',
-          type: 'live',
-          timestamp: new Date().toISOString(),
-          data: [],
-          total: 0,
-          error: 'Browser initialization failed',
-          duration: Date.now() - this.scrapeStartTime,
-          scrapeId: scrapeId,
-        };
+      if (!browserOk) {
+        logger.warn(`⚠️ [${scrapeId}] Browser not available, using fallback mode`);
+        this.useFallback = true;
       }
 
       this.processedUrls.clear();
@@ -2966,7 +3355,7 @@ class LiveScraper extends BaseCrexScraper {
       const discoveredMatches = await this.discoverLiveMatches();
 
       if (!discoveredMatches || !Array.isArray(discoveredMatches)) {
-        logger.warn(`⚠️ [${scrapeId}] Discovered matches is not an array, using empty array`);
+        logger.warn(`⚠️ [${scrapeId}] Discovered matches is not an array`);
         this.stats.discovered = 0;
         this.forceReleaseLock();
         return {
