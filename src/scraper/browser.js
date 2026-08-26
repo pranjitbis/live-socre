@@ -169,8 +169,19 @@ class BrowserManager {
         ignoreDefaultArgs: ['--enable-automation']
       };
 
-      // ⭐ Launch SINGLE browser
-      this.browser = await playwright.chromium.launch(launchOptions);
+      // ⭐ Launch SINGLE browser with auto-installation recovery
+      try {
+        this.browser = await playwright.chromium.launch(launchOptions);
+      } catch (launchErr) {
+        if (launchErr.message.includes("Executable doesn't exist") || launchErr.message.includes("playwright install")) {
+          logger.warn('⚠️ Playwright Chromium browser missing on server! Auto-installing binary now...');
+          const { execSync } = require('child_process');
+          execSync('npx playwright install chromium', { stdio: 'inherit' });
+          this.browser = await playwright.chromium.launch(launchOptions);
+        } else {
+          throw launchErr;
+        }
+      }
       this.stats.launches++;
 
       // Context options with proxy if available
