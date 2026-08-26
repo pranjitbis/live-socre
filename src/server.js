@@ -109,9 +109,6 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress || 'unknown';
-  },
   skip: (req) => {
     if (!isProduction) {
       const ip = req.ip || req.connection.remoteAddress;

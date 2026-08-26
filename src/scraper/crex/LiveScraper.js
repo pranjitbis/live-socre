@@ -50,9 +50,9 @@ class LiveScraper extends BaseCrexScraper {
     this.browserManager = browserManager;
     this.useBrowserManager = true;
 
-    this.numberOfAgents = 4;
-    this.agentStaggerDelay = 2000;
-    this.matchDelay = 2000;
+    this.numberOfAgents = 5;
+    this.agentStaggerDelay = 100;
+    this.matchDelay = 100;
     this.activeAgents = 0;
     this.agentResults = [];
     this.agentStats = {};
@@ -66,7 +66,7 @@ class LiveScraper extends BaseCrexScraper {
     this._scrapeId = null;
     this._scrapePromise = null;
     this._lastScrapeTime = 0;
-    this._minScrapeInterval = 5000;
+    this._minScrapeInterval = 1000;
 
     this.geoCache = new Map();
     this.weatherCache = new Map();
@@ -2430,7 +2430,7 @@ class LiveScraper extends BaseCrexScraper {
 
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await this.sleep(2000);
+        await this.sleep(200);
       } catch (navError) {
         logger.warn(`   ⚠️ ${agentId} navigation timeout, using fallback`);
         return this.createFallbackMatch(match);
@@ -2448,7 +2448,7 @@ class LiveScraper extends BaseCrexScraper {
         return this.createFallbackMatch(match);
       }
 
-      await this.sleep(1000);
+      await this.sleep(100);
 
       // Extract all data
       const [series, venue, scoreboard, currentBatsmen, currentBowler, toss, commentary, matchFormat, currentInnings, currentBallRaw, startTime, prediction, yetToBat, fullScorecard, lastBall, matchStatus] =
@@ -3167,6 +3167,22 @@ class LiveScraper extends BaseCrexScraper {
           break;
         } catch (navError) {
           logger.warn(`⚠️ Navigation attempt ${attempt} failed: ${navError.message}`);
+          
+          const isCrash = navError.message.toLowerCase().includes('crash') || 
+                          navError.message.toLowerCase().includes('detached') || 
+                          navError.message.toLowerCase().includes('closed');
+          if (isCrash) {
+            logger.warn('⚠️ Page or browser crashed, restarting browser...');
+            try {
+              if (this.page) await this.page.close().catch(() => {});
+            } catch (e) {}
+            this.page = null;
+            this.isBrowserInitialized = false;
+            
+            await this.browserManager.restart().catch(err => logger.error(`Failed to restart browser manager: ${err.message}`));
+            await this.initializeBrowser().catch(() => {});
+          }
+          
           if (attempt < 2) {
             await this.sleep(2000 * attempt);
           }
@@ -3178,7 +3194,7 @@ class LiveScraper extends BaseCrexScraper {
         return [];
       }
 
-      await this.sleep(2000);
+      await this.sleep(200);
 
       try {
         await this.page.waitForSelector('.live-card, .match-card, .team-innig, .team-result', {
@@ -3186,10 +3202,10 @@ class LiveScraper extends BaseCrexScraper {
         });
       } catch (e) {
         logger.warn('⚠️ No match indicators found, waiting for page to settle...');
-        await this.sleep(3000);
+        await this.sleep(500);
       }
 
-      await this.sleep(1000);
+      await this.sleep(100);
     } catch (error) {
       logger.error(`❌ Failed to load live matches page: ${error.message}`);
       return [];
