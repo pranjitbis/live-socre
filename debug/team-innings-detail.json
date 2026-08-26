@@ -1,0 +1,23 @@
+[
+  {
+    "index": 0,
+    "tag": "div",
+    "class": "team-inning",
+    "html": "<div _ngcontent-sc27=\"\" class=\"team-img pdl-0\"><img _ngcontent-sc27=\"\" loading=\"lazy\" onerror=\"this.src='../../../../assets/img/Team_Flags.png'\" fetchpriority=\"high\" alt=\"team important image\" width=\"100px\" height=\"100px\" src=\"../../../../assets/img/Team_Flags.png\"></div><div _ngcontent-sc27=\"\" class=\"team-content\"><div _ngcontent-sc27=\"\" class=\"team-name team-1\"> SFU <!----><span _ngcontent-sc27=\"\" class=\"inning-f\"> </span><!----><!----></div><div _ngcontent-sc27=\"\" class=\"team-score\"><div _ngcontent-sc27=\"\" class=\"runs f-runs\"><span _ngcontent-sc27=\"\">156-3</span><span _ngcontent-sc27=\"\">(15.2)</span><!----><!----></div><!----></div><!----></div>",
+    "text": "SFU 156-3(15.2)"
+  },
+  {
+    "index": 1,
+    "tag": "div",
+    "class": "team-result",
+    "html": "<div _ngcontent-sc27=\"\" class=\"result-box\"><!----><span _ngcontent-sc27=\"\" class=\"font3 font4\"> San Francisco Unicorns won by 7 wickets 🏆 </span><!----><!----><!----></div>",
+    "text": "San Francisco Unicorns won by 7 wickets 🏆"
+  },
+  {
+    "index": 2,
+    "tag": "div",
+    "class": "team-inning second-inning",
+    "html": "<div _ngcontent-sc27=\"\" class=\"team-content second-team\"><div _ngcontent-sc27=\"\" class=\"team-name team-2 text-right\"><span _ngcontent-sc27=\"\" class=\"inning-f\"> </span><!----><!----><div _ngcontent-sc27=\"\"> LHQ</div><!----><!----></div><div _ngcontent-sc27=\"\" class=\"team-score text-right\"><div _ngcontent-sc27=\"\" class=\"runs second-innings\"><span _ngcontent-sc27=\"\">(20.0)</span><!----><!----><span _ngcontent-sc27=\"\">152-6 </span></div><!----><!----><!----></div><!----></div><!----><!----><div _ngcontent-sc27=\"\" class=\"final-result blinking2 des-none\"> </div><div _ngcontent-sc27=\"\" class=\"team-img m-none\"><img _ngcontent-sc27=\"\" loading=\"lazy\" onerror=\"this.src='../../../../assets/img/Team_Flags.png'\" fetchpriority=\"high\" alt=\"team image\" width=\"100px\" height=\"100px\" src=\"../../../../assets/img/Team_Flags.png\"></div><!---->",
+    "text": "LHQ(20.0)152-6"
+  }
+]

@@ -472,6 +472,45 @@ app.get('/api/live', async (req, res) => {
   }
 });
 
+// Temporary endpoint to inspect the cached DOM structure of the live scoreboard
+app.get('/api/test-dom', async (req, res) => {
+  try {
+    const cheerio = require('cheerio');
+    const htmlPath = path.join(__dirname, '../debug/live-page.html');
+    if (!fs.existsSync(htmlPath)) {
+      return res.status(404).json({ error: 'debug/live-page.html not found' });
+    }
+    const html = fs.readFileSync(htmlPath, 'utf-8');
+    const $ = cheerio.load(html);
+    
+    const results = {
+      title: $('title').text().trim(),
+      elements: []
+    };
+    
+    $('*').each((i, el) => {
+      const className = $(el).attr('class') || '';
+      const id = $(el).attr('id') || '';
+      if (className.includes('team') || className.includes('score') || className.includes('match') || className.includes('inning') || className.includes('innig') ||
+          id.includes('team') || id.includes('score') || id.includes('match') || id.includes('inning')) {
+        results.elements.push({
+          tagName: el.tagName,
+          class: className,
+          id: id,
+          textSnippet: $(el).text().trim().substring(0, 100).replace(/\s+/g, ' ')
+        });
+      }
+    });
+
+    // Also get the first 1000 characters of the body
+    results.bodySnippet = $('body').text().trim().substring(0, 2000).replace(/\s+/g, ' ');
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 // ============================================================
 // ✅ BROADCAST API ENDPOINT
 // ============================================================
@@ -1368,6 +1407,35 @@ const main = async () => {
   try {
     await initializeServices();
     startServer();
+
+    // Run test DOM inspection on cached match details
+    (async () => {
+      try {
+        const cheerio = require('cheerio');
+        const jsonPath = path.join(__dirname, '../debug/match-info-investigation/2026-08-23T14-46-20-145Z-step1.json');
+        if (fs.existsSync(jsonPath)) {
+          const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+          const $ = cheerio.load(data.html);
+          const innings = [];
+          $('.team-inning, [class*="team-inning"], .team-innig, .team-result').each((i, el) => {
+            innings.push({
+              index: i,
+              tag: el.tagName,
+              class: $(el).attr('class') || '',
+              html: $(el).html() ? $(el).html().trim().replace(/\s+/g, ' ') : '',
+              text: $(el).text().trim().replace(/\s+/g, ' ')
+            });
+          });
+          fs.writeFileSync(path.join(__dirname, '../debug/team-innings-detail.json'), JSON.stringify(innings, null, 2));
+          logger.info(`✅ Temp Startup Parser: Wrote ${innings.length} team innings to debug/team-innings-detail.json`);
+        } else {
+          logger.warn(`⚠️ Temp Startup Parser: 2026-08-23T14-46-20-145Z-step1.json not found`);
+        }
+      } catch (err) {
+        logger.error('Temp Startup Parser error:', err);
+      }
+    })();
+
   } catch (error) {
     logger.error('Failed to start application:', error);
     process.exit(1);

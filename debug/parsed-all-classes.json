@@ -1,0 +1,1466 @@
+[
+  {
+    "tag": "script",
+    "class": "",
+    "id": "webpage-schema",
+    "text": "{\"@context\":\"https://schema.org\",\"@type\":\"WebPage\",\"@id\":\"https://crex.com/crick"
+  },
+  {
+    "tag": "script",
+    "class": "",
+    "id": "sitenavigation-schema",
+    "text": "{\"@context\":\"https://schema.org\",\"@type\":\"ItemList\",\"itemListElement\":[{\"@type\":"
+  },
+  {
+    "tag": "script",
+    "class": "",
+    "id": "organization-schema",
+    "text": "{\"@context\":\"https://schema.org\",\"@type\":\"NewsMediaOrganization\",\"@id\":\"https://"
+  },
+  {
+    "tag": "script",
+    "class": "",
+    "id": "breadcrumList-schema",
+    "text": "{\"@context\":\"https://schema.org\",\"@type\":\"BreadcrumbList\",\"itemListElement\":[{\"@"
+  },
+  {
+    "tag": "div",
+    "class": "header-wrapper-top",
+    "id": "header-top-ele",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "div",
+    "class": "header-wrapper",
+    "id": "",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "div",
+    "class": "row no-gutters",
+    "id": "",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "div",
+    "class": "col-12 header order-1 order-md-1",
+    "id": "myHeader",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "nav",
+    "class": "navbar navbar-expand-lg",
+    "id": "",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "div",
+    "class": "container",
+    "id": "",
+    "text": "CREX Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "div",
+    "class": "flex-layout",
+    "id": "",
+    "text": "CREX"
+  },
+  {
+    "tag": "a",
+    "class": "navbar-brand",
+    "id": "",
+    "text": "CREX"
+  },
+  {
+    "tag": "div",
+    "class": "name",
+    "id": "",
+    "text": "CREX"
+  },
+  {
+    "tag": "div",
+    "class": "headText",
+    "id": "",
+    "text": "CREX"
+  },
+  {
+    "tag": "div",
+    "class": "collapse show",
+    "id": "navbarSupportedContent",
+    "text": "Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "ul",
+    "class": "navbar-nav mr-auto",
+    "id": "",
+    "text": "Home(current)SeriesTeamsFixtures🏏 Stats CornerRankingsNewsDark"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item",
+    "id": "",
+    "text": "Home(current)"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "Home(current)"
+  },
+  {
+    "tag": "span",
+    "class": "sr-only",
+    "id": "",
+    "text": "(current)"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item",
+    "id": "",
+    "text": "Series"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "Series"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item",
+    "id": "",
+    "text": "Teams"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "Teams"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item",
+    "id": "",
+    "text": "Fixtures"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "Fixtures"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item",
+    "id": "",
+    "text": "🏏 Stats Corner"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "🏏 Stats Corner"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item mob-none",
+    "id": "",
+    "text": "Rankings"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "Rankings"
+  },
+  {
+    "tag": "li",
+    "class": "nav-item mob-none",
+    "id": "",
+    "text": "News"
+  },
+  {
+    "tag": "a",
+    "class": "nav-link",
+    "id": "",
+    "text": "News"
+  },
+  {
+    "tag": "li",
+    "class": "theme-toggle-wrap",
+    "id": "",
+    "text": "Dark"
+  },
+  {
+    "tag": "div",
+    "class": "theme-wrap",
+    "id": "",
+    "text": "Dark"
+  },
+  {
+    "tag": "div",
+    "class": "theme-icon",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "theme-text",
+    "id": "",
+    "text": "Dark"
+  },
+  {
+    "tag": "div",
+    "class": "match-tab mob-tb",
+    "id": "",
+    "text": "Live (1) For YouUpcomingFinished"
+  },
+  {
+    "tag": "div",
+    "class": "matchTab active",
+    "id": "",
+    "text": "Live (1)"
+  },
+  {
+    "tag": "div",
+    "class": "matchTab",
+    "id": "",
+    "text": "For You"
+  },
+  {
+    "tag": "div",
+    "class": "matchTab",
+    "id": "",
+    "text": "Upcoming"
+  },
+  {
+    "tag": "div",
+    "class": "matchTab",
+    "id": "",
+    "text": "Finished"
+  },
+  {
+    "tag": "div",
+    "class": "bg-gradient",
+    "id": "",
+    "text": "Top Matches Live (1) The Hundred 2026 (3)IND vs SL 2026 (1)AFG vs IRE 2026 (1)T"
+  },
+  {
+    "tag": "div",
+    "class": "container",
+    "id": "",
+    "text": "Top Matches Live (1) The Hundred 2026 (3)IND vs SL 2026 (1)AFG vs IRE 2026 (1)T"
+  },
+  {
+    "tag": "div",
+    "class": "data",
+    "id": "",
+    "text": "Top Matches Live (1) The Hundred 2026 (3)IND vs SL 2026 (1)AFG vs IRE 2026 (1)T"
+  },
+  {
+    "tag": "div",
+    "class": "match-tab desk-tb",
+    "id": "",
+    "text": "Top Matches Live (1) The Hundred 2026 (3)IND vs SL 2026 (1)AFG vs IRE 2026 (1)T"
+  },
+  {
+    "tag": "a",
+    "class": "matchTab",
+    "id": "",
+    "text": "Top Matches"
+  },
+  {
+    "tag": "a",
+    "class": "matchTab active",
+    "id": "",
+    "text": "Live (1)"
+  },
+  {
+    "tag": "li",
+    "class": "desktop-series-filter",
+    "id": "",
+    "text": "The Hundred 2026 (3)IND vs SL 2026 (1)AFG vs IRE 2026 (1)TNPL 2026 (4)LPL 2026 ("
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "The Hundred 2026 (3)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "IND vs SL 2026 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "AFG vs IRE 2026 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "TNPL 2026 (4)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "LPL 2026 (2)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "PAK vs WI 2026 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "DPL 2026 (5)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "The Hundred W 2026 (3)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "CPL 2026 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "England One Day Cup 2026 (4)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "Assam T20 2026 (4)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "CWC League-2 2023-27 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "IRE -W Super 50 2026 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "CWC League B 2024-26 (1)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "England-Hornchurch T10 2026 (4)"
+  },
+  {
+    "tag": "a",
+    "class": "filter-tab",
+    "id": "",
+    "text": "ENG-W One Day Cup League-2 2026 (1)"
+  },
+  {
+    "tag": "div",
+    "class": "title",
+    "id": "",
+    "text": "Cricket Schedule"
+  },
+  {
+    "tag": "svg",
+    "class": "next",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "slider-btn",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "live-matches order-2 order-md-2",
+    "id": "slide",
+    "text": "Advertisement Advertisement Live The Hundred 2026 24th 100B, Edgbaston Cricket"
+  },
+  {
+    "tag": "p",
+    "class": "lcp-element",
+    "id": "",
+    "text": "Advertisement"
+  },
+  {
+    "tag": "div",
+    "class": "home-top-ad",
+    "id": "",
+    "text": "Advertisement"
+  },
+  {
+    "tag": "div",
+    "class": "ads-p",
+    "id": "",
+    "text": "Advertisement"
+  },
+  {
+    "tag": "div",
+    "class": "ad-container",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "live-card-wrapper",
+    "id": "",
+    "text": "Live The Hundred 2026 24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-"
+  },
+  {
+    "tag": "div",
+    "class": "live-card",
+    "id": "",
+    "text": "Live The Hundred 2026 24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-"
+  },
+  {
+    "tag": "div",
+    "class": "live-card-top",
+    "id": "",
+    "text": "Live The Hundred 2026"
+  },
+  {
+    "tag": "div",
+    "class": "live",
+    "id": "",
+    "text": "Live The Hundred 2026"
+  },
+  {
+    "tag": "div",
+    "class": "ce-data",
+    "id": "",
+    "text": "Live The Hundred 2026"
+  },
+  {
+    "tag": "div",
+    "class": "",
+    "id": "circle",
+    "text": ""
+  },
+  {
+    "tag": "span",
+    "class": "liveTag",
+    "id": "",
+    "text": "Live"
+  },
+  {
+    "tag": "div",
+    "class": "br-right",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "snameTag",
+    "id": "",
+    "text": "The Hundred 2026"
+  },
+  {
+    "tag": "div",
+    "class": "icon-arrow",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "live-card-middle middleContentHeight",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7 100b BP 22-2 20b 148 "
+  },
+  {
+    "tag": "div",
+    "class": "match-number",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, Birmingham"
+  },
+  {
+    "tag": "div",
+    "class": "d-flex",
+    "id": "",
+    "text": "SRL 169-7 100b BP 22-2 20b"
+  },
+  {
+    "tag": "div",
+    "class": "live-c-w",
+    "id": "",
+    "text": "SRL 169-7 100b BP 22-2 20b"
+  },
+  {
+    "tag": "div",
+    "class": "team-score live-d",
+    "id": "",
+    "text": "SRL 169-7 100b"
+  },
+  {
+    "tag": "span",
+    "class": "team-name",
+    "id": "",
+    "text": "SRL"
+  },
+  {
+    "tag": "span",
+    "class": "match-over",
+    "id": "",
+    "text": "100b"
+  },
+  {
+    "tag": "div",
+    "class": "team-score",
+    "id": "",
+    "text": "BP 22-2 20b"
+  },
+  {
+    "tag": "span",
+    "class": "team-name",
+    "id": "",
+    "text": "BP"
+  },
+  {
+    "tag": "span",
+    "class": "inning-active",
+    "id": "",
+    "text": "22-2"
+  },
+  {
+    "tag": "span",
+    "class": "match-over",
+    "id": "",
+    "text": "20b"
+  },
+  {
+    "tag": "span",
+    "class": "comment",
+    "id": "",
+    "text": "148 runs needed in 80 balls"
+  },
+  {
+    "tag": "div",
+    "class": "comment",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "live-container",
+    "id": "",
+    "text": "The Hundred 2026 Men24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100b"
+  },
+  {
+    "tag": "div",
+    "class": "mr-bottom-set",
+    "id": "",
+    "text": "The Hundred 2026 Men24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100b"
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": "The Hundred 2026 Men24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100b"
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": "The Hundred 2026 Men24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100b"
+  },
+  {
+    "tag": "div",
+    "class": "live-card",
+    "id": "seriesName0",
+    "text": "The Hundred 2026 Men"
+  },
+  {
+    "tag": "div",
+    "class": "live-card-top",
+    "id": "",
+    "text": "The Hundred 2026 Men"
+  },
+  {
+    "tag": "div",
+    "class": "ce-data",
+    "id": "",
+    "text": "The Hundred 2026 Men"
+  },
+  {
+    "tag": "div",
+    "class": "snameTag",
+    "id": "",
+    "text": "The Hundred 2026 Men"
+  },
+  {
+    "tag": "div",
+    "class": "series-name-block",
+    "id": "",
+    "text": "The Hundred 2026 Men"
+  },
+  {
+    "tag": "div",
+    "class": "icon-arrow",
+    "id": "arrowExp0",
+    "text": ""
+  },
+  {
+    "tag": "clipPath",
+    "class": "",
+    "id": "clip0_563_36701",
+    "text": ""
+  },
+  {
+    "tag": "ul",
+    "class": "",
+    "id": "seriesSec0",
+    "text": "24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100bBP 22-220b Live 148 "
+  },
+  {
+    "tag": "li",
+    "class": "live-card",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100bBP 22-220b Live 148 "
+  },
+  {
+    "tag": "div",
+    "class": "match-card-container",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100bBP 22-220b Live 148 "
+  },
+  {
+    "tag": "div",
+    "class": "match-card-wrapper",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, BirminghamSRL 169-7100bBP 22-220b Live 148 "
+  },
+  {
+    "tag": "h3",
+    "class": "match-info",
+    "id": "",
+    "text": "24th 100B, Edgbaston Cricket Ground, Birmingham"
+  },
+  {
+    "tag": "div",
+    "class": "match-details",
+    "id": "",
+    "text": "SRL 169-7100bBP 22-220b Live"
+  },
+  {
+    "tag": "div",
+    "class": "team-info",
+    "id": "",
+    "text": "SRL 169-7100bBP 22-220b"
+  },
+  {
+    "tag": "div",
+    "class": "team inning-deactive",
+    "id": "",
+    "text": "SRL 169-7100b"
+  },
+  {
+    "tag": "span",
+    "class": "team-name",
+    "id": "",
+    "text": "SRL"
+  },
+  {
+    "tag": "span",
+    "class": "team-score",
+    "id": "",
+    "text": "169-7"
+  },
+  {
+    "tag": "span",
+    "class": "total-overs",
+    "id": "",
+    "text": "100b"
+  },
+  {
+    "tag": "div",
+    "class": "team",
+    "id": "",
+    "text": "BP 22-220b"
+  },
+  {
+    "tag": "span",
+    "class": "team-name",
+    "id": "",
+    "text": "BP"
+  },
+  {
+    "tag": "span",
+    "class": "team-score inning-active",
+    "id": "",
+    "text": "22-2"
+  },
+  {
+    "tag": "span",
+    "class": "total-overs",
+    "id": "",
+    "text": "20b"
+  },
+  {
+    "tag": "div",
+    "class": "vertical-line",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "result live",
+    "id": "",
+    "text": "Live"
+  },
+  {
+    "tag": "div",
+    "class": "live-info",
+    "id": "",
+    "text": "Live"
+  },
+  {
+    "tag": "div",
+    "class": "blinker",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "",
+    "id": "circle",
+    "text": ""
+  },
+  {
+    "tag": "span",
+    "class": "liveTag",
+    "id": "",
+    "text": "Live"
+  },
+  {
+    "tag": "div",
+    "class": "flex comment-sec",
+    "id": "",
+    "text": "148 runs needed in 80 balls"
+  },
+  {
+    "tag": "span",
+    "class": "comment",
+    "id": "",
+    "text": "148 runs needed in 80 balls"
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "section",
+    "class": "match-list",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "body",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "slider-btn",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "home-wrapper",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "container",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "section",
+    "class": "news-topic-wrapper",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "England's Key Player Hit With Massive Injury Before Pakistan Tests Emilio Gay h"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "3 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "EnglandEmilio GayPakistan tour of England 2026"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "Shakib Al Hasan Ready To Face Murder Charges In Bangladesh After nearly two yea"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "3 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "BangladeshShakib Al Hasan"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "CPL 2026 Schedule, Live Streaming, Live Telecast In India, Squads, Venues In th"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "5 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "Caribbean Premier League 2026Antigua & Barbuda FalconsBarbados TridentsGuyana Am"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "The Bowling Reinvention That Has Transformed Rachin Ravindra’s T20 Value Rachin"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "6 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "New ZealandRachin RavindraIndian Premier League 2027"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "Scotland vs Canada Becomes 5000th ODI! Did India Feature In 1000, 2000, 3000, Or"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "7 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "ScotlandCanadaMen's CWC League 2 2023-27"
+  },
+  {
+    "tag": "div",
+    "class": "card-wrapper head-top",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "news-card",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "row",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "news-card-img",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "col-sm-6 col-lg-6",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "news-content",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "news-heading",
+    "id": "",
+    "text": "SLC Makes Special Gesture For IND Vs SL Tests To Surprise Fans Sri Lanka Cricke"
+  },
+  {
+    "tag": "div",
+    "class": "news-time time-mobile",
+    "id": "",
+    "text": "7 hours ago"
+  },
+  {
+    "tag": "div",
+    "class": "news-tag",
+    "id": "",
+    "text": "IndiaSri LankaIndia tour of Sri Lanka 2026"
+  },
+  {
+    "tag": "div",
+    "class": "ads-wrapper-r",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "ins",
+    "class": "adsbygoogle",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "ins",
+    "class": "adsbygoogle",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "_ap_apex_ad",
+    "id": "68312531-1f57-42ad-b48f-5aef91a077d1",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "ads-wrapper-l",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "ins",
+    "class": "adsbygoogle",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "ins",
+    "class": "adsbygoogle",
+    "id": "",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "_ap_apex_ad",
+    "id": "49359fd6-eb4a-4940-9a1e-fe6fe98ca9f9",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "bottom-space",
+    "id": "taboola-below-homepage-thumbnails",
+    "text": ""
+  },
+  {
+    "tag": "div",
+    "class": "footer",
+    "id": "",
+    "text": "CREXAboutEditorial TeamGrievanceRefund PolicyContest TermsEditorial PolicyContac"
+  },
+  {
+    "tag": "footer",
+    "class": "b-footer",
+    "id": "",
+    "text": "CREXAboutEditorial TeamGrievanceRefund PolicyContest TermsEditorial PolicyContac"
+  },
+  {
+    "tag": "div",
+    "class": "container",
+    "id": "",
+    "text": "CREXAboutEditorial TeamGrievanceRefund PolicyContest TermsEditorial PolicyContac"
+  },
+  {
+    "tag": "a",
+    "class": "navbar-brand footer-CElogo",
+    "id": "",
+    "text": "CREX"
+  },
+  {
+    "tag": "div",
+    "class": "footer-link",
+    "id": "",
+    "text": "AboutEditorial TeamGrievanceRefund PolicyContest TermsEditorial PolicyContact Us"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Contest Terms"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Editorial Policy"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Contact Us"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Partner with us"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Privacy Policy"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Terms and Conditions"
+  },
+  {
+    "tag": "li",
+    "class": "r-shift",
+    "id": "",
+    "text": "Sitemap"
+  },
+  {
+    "tag": "script",
+    "class": "",
+    "id": "app-root-state",
+    "text": "{&q;ssr-bootstrap-v1&q;:{&q;theme&q;:&q;light&q;,&q;isMobile&q;:false,&q;baseHre"
+  }
+]
