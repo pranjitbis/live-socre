@@ -472,6 +472,78 @@ app.get('/api/live', async (req, res) => {
   }
 });
 
+// Temporary endpoint to debug production database connectivity
+app.get('/api/db-debug', async (req, res) => {
+  try {
+    const dns = require('dns').promises;
+    const db = require('./database');
+    const config = require('./config');
+    
+    const dbConfig = {
+      url: config.database.url ? config.database.url.replace(/:[^:@\n]+@/, ':****@') : null,
+      host: config.database.host,
+      port: config.database.port,
+      user: config.database.user,
+      database: config.database.database,
+      hasPassword: !!config.database.password,
+    };
+
+    const envKeys = Object.keys(process.env).filter(k => 
+      k.includes('DB') || k.includes('MYSQL') || k.includes('DATABASE') || k.includes('RAILWAY')
+    );
+
+    const dnsResults = {};
+    const hostsToResolve = ['mysql.railway.internal', 'db.railway.internal', config.database.host];
+    for (const h of hostsToResolve) {
+      if (h) {
+        try {
+          const ips = await dns.resolve4(h);
+          dnsResults[h] = { success: true, ips };
+        } catch (err) {
+          dnsResults[h] = { success: false, error: err.message };
+        }
+      }
+    }
+
+    let connectionTest = null;
+    try {
+      const mysql2 = require('mysql2/promise');
+      let testPool;
+      if (config.database.url) {
+        testPool = mysql2.createPool(config.database.url);
+      } else {
+        testPool = mysql2.createPool({
+          host: config.database.host,
+          user: config.database.user,
+          password: config.database.password,
+          database: config.database.database,
+          port: config.database.port,
+          connectTimeout: 5000,
+        });
+      }
+      const conn = await testPool.getConnection();
+      const [rows] = await conn.query('SELECT 1 as connected');
+      conn.release();
+      await testPool.end();
+      connectionTest = { success: true, result: rows };
+    } catch (err) {
+      connectionTest = { success: false, error: err.message };
+    }
+
+    res.json({
+      success: true,
+      config: dbConfig,
+      envKeys,
+      dnsResults,
+      connectionTest,
+      isMemoryMode: db.isMemoryMode(),
+      isInitialized: db.isInitialized()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 // Temporary endpoint to inspect the cached DOM structure of the live scoreboard
 app.get('/api/test-dom', async (req, res) => {
   try {
@@ -1408,31 +1480,52 @@ const main = async () => {
     await initializeServices();
     startServer();
 
-    // Run test DOM inspection on cached match details
+    // Run API comparison fetch and tail logs
     (async () => {
       try {
-        const cheerio = require('cheerio');
-        const jsonPath = path.join(__dirname, '../debug/match-info-investigation/2026-08-23T14-46-20-145Z-step1.json');
-        if (fs.existsSync(jsonPath)) {
-          const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-          const $ = cheerio.load(data.html);
-          const innings = [];
-          $('.team-inning, [class*="team-inning"], .team-innig, .team-result').each((i, el) => {
-            innings.push({
-              index: i,
-              tag: el.tagName,
-              class: $(el).attr('class') || '',
-              html: $(el).html() ? $(el).html().trim().replace(/\s+/g, ' ') : '',
-              text: $(el).text().trim().replace(/\s+/g, ' ')
-            });
-          });
-          fs.writeFileSync(path.join(__dirname, '../debug/team-innings-detail.json'), JSON.stringify(innings, null, 2));
-          logger.info(`✅ Temp Startup Parser: Wrote ${innings.length} team innings to debug/team-innings-detail.json`);
-        } else {
-          logger.warn(`⚠️ Temp Startup Parser: 2026-08-23T14-46-20-145Z-step1.json not found`);
+        const axios = require('axios');
+        
+        // Write the last 20k of app.log to debug/logs-end.txt
+        try {
+          const logPath = path.join(__dirname, '../logs/app.log');
+          if (fs.existsSync(logPath)) {
+            const stats = fs.statSync(logPath);
+            const size = stats.size;
+            const bytesToRead = Math.min(size, 20000);
+            const startByte = Math.max(0, size - bytesToRead);
+            const buffer = Buffer.alloc(bytesToRead);
+            const fd = fs.openSync(logPath, 'r');
+            fs.readSync(fd, buffer, 0, bytesToRead, startByte);
+            fs.closeSync(fd);
+            fs.writeFileSync(path.join(__dirname, '../debug/logs-end.txt'), buffer.toString('utf8'));
+            logger.info('✅ [Comparison] Tailed app.log to debug/logs-end.txt');
+          }
+        } catch (err) {
+          logger.error('❌ [Comparison] Failed to tail app.log:', err.message);
+        }
+
+        // Wait a few seconds for the local server to fully start up
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        logger.info('🔍 [Comparison] Fetching Local API...');
+        try {
+          const localRes = await axios.get('http://localhost:3000/api/scrape/live');
+          fs.writeFileSync(path.join(__dirname, '../debug/local-api-response.json'), JSON.stringify(localRes.data, null, 2));
+          logger.info(`✅ [Comparison] Saved Local API response: ${localRes.data.total || 0} matches`);
+        } catch (err) {
+          logger.error('❌ [Comparison] Failed to fetch Local API:', err.message);
+        }
+
+        logger.info('🔍 [Comparison] Fetching Railway API...');
+        try {
+          const railwayRes = await axios.get('https://live-socre-production.up.railway.app/api/scrape/live');
+          fs.writeFileSync(path.join(__dirname, '../debug/railway-api-response.json'), JSON.stringify(railwayRes.data, null, 2));
+          logger.info(`✅ [Comparison] Saved Railway API response: ${railwayRes.data.total || 0} matches`);
+        } catch (err) {
+          logger.error('❌ [Comparison] Failed to fetch Railway API:', err.message);
         }
       } catch (err) {
-        logger.error('Temp Startup Parser error:', err);
+        logger.error('[Comparison] General error:', err);
       }
     })();
 

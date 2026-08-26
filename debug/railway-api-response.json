@@ -1,0 +1,1085 @@
+{
+  "success": true,
+  "source": "crex",
+  "type": "live",
+  "total": 4,
+  "data": [
+    {
+      "match_id": "kk-vs-tgc-qualifier-2nd-match-tamil-nadu-premier-league-2026-match-updates-12ZP",
+      "match_url": "https://crex.com/cricket-live-score/kk-vs-tgc-qualifier-2nd-match-tamil-nadu-premier-league-2026-match-updates-12ZP",
+      "series": {
+        "id": "series_1787762917444",
+        "name": "KK vs TGC, Qualifier 2 T20, TNPL 2026  live",
+        "short_name": "KK vs TGC, Qualifier",
+        "season": "2026"
+      },
+      "match": {
+        "number": "Qualifier 2",
+        "format": "T20",
+        "status": "TGC need 99 runs  in 44 balls",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": "12.3"
+      },
+      "venue": {
+        "id": "venue_1787762917444",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_kk",
+          "name": "KK",
+          "short_name": "KK",
+          "logo": "https://crex.com/assets/img/Team_Flags.png"
+        },
+        "away": {
+          "id": "team_tgc",
+          "name": "TGC",
+          "short_name": "TGC",
+          "logo": "https://cricketvectors.akamaized.net/Teams/R0.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "TGC",
+          "score": "85",
+          "runs": 85,
+          "wickets": 0,
+          "overs": "12.4",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "KK",
+          "score": "85",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": 99,
+        "required_balls": 44,
+        "crr": 6.71,
+        "rrr": 13.5,
+        "current_ball": "12.3",
+        "full_scorecard": null
+      },
+      "current_batsmen": [
+        {
+          "name": "P Saravana Kumar",
+          "runs": 11,
+          "balls": 6,
+          "is_striker": true
+        },
+        {
+          "name": "N Selva Kumaran",
+          "runs": 6,
+          "balls": 7,
+          "is_striker": false
+        }
+      ],
+      "yet_to_bat": [],
+      "current_bowler": {
+        "name": "G Kishoor",
+        "overs": "1.4",
+        "runs": 15,
+        "wickets": 0
+      },
+      "last_ball": {
+        "ball": "12.3",
+        "value": "4",
+        "event": "four",
+        "isWicket": false
+      },
+      "overs": [
+        {
+          "over": "10",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "6"
+        },
+        {
+          "over": "11",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            }
+          ],
+          "total": "11"
+        },
+        {
+          "over": "12",
+          "balls": [
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "2"
+        },
+        {
+          "over": "13",
+          "balls": [
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            }
+          ],
+          "total": "6"
+        }
+      ],
+      "commentary": [
+        {
+          "ball": "12.3",
+          "result": "4",
+          "text": "FOUR!!!! Length delivery wide outside off, 129.5 kmph, Selva Kumaran flashes hard at it and gets a thick outside edge that flies in the third man region for four runs.",
+          "isWicket": false
+        },
+        {
+          "ball": "12.2",
+          "result": "0",
+          "text": "Good length delivery on the stumps, 132.5 kmph, defended straight down the pitch.",
+          "isWicket": false
+        },
+        {
+          "ball": "12.1",
+          "result": "1",
+          "text": "Back of a length delivery outside off, 129.7 kmph, Saravan pushes at it and gets a thick outside edge down to third man for a run.",
+          "isWicket": false
+        },
+        {
+          "ball": "11.6",
+          "result": "0",
+          "text": "Good length delivery on middle, defended to the left of the bowler.",
+          "isWicket": false
+        },
+        {
+          "ball": "11.5",
+          "result": "0",
+          "text": "Quicker delivery outside off, pushed off the backfoot to covers.",
+          "isWicket": false
+        },
+        {
+          "ball": "11.4",
+          "result": "0",
+          "text": "On a length outside off, Selva Kumaran hangs back and defends it to covers.",
+          "isWicket": false
+        },
+        {
+          "ball": "11.3",
+          "result": "1",
+          "text": "Tossed up full outside off, pushed down to long off for a single.",
+          "isWicket": false
+        }
+      ],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "win_probability_text": null,
+        "favorite": null,
+        "projected_scores": [
+          {
+            "rate": 6.71,
+            "projected_runs": 8,
+            "text": "6.71 R.R: 8"
+          }
+        ]
+      },
+      "odds": {
+        "favorite": null,
+        "home_win_percentage": null,
+        "away_win_percentage": null,
+        "win_probability": null,
+        "market_rates": null,
+        "betting_summary": null
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null,
+      "_lastUpdated": "2026-08-26T16:48:37.448Z",
+      "_updateCount": 1
+    },
+    {
+      "match_id": "ar-vs-kbt-14th-match-kerala-cricket-league-t20-2026-match-updates-13G8",
+      "match_url": "https://crex.com/cricket-live-score/ar-vs-kbt-14th-match-kerala-cricket-league-t20-2026-match-updates-13G8",
+      "series": {
+        "id": "series_1787762917947",
+        "name": "AR vs KBT, 14th T20, KCL T20 2026  live",
+        "short_name": "AR vs KBT, 14th T20,",
+        "season": "2026"
+      },
+      "match": {
+        "number": "14th T20",
+        "format": "T20",
+        "status": "KBT need 125 runs  in 35 balls",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": null
+      },
+      "venue": {
+        "id": "venue_1787762917947",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_kbt__pp",
+          "name": "KBT  PP",
+          "short_name": "AR",
+          "logo": "https://crex.com/assets/img/Team_Flags.png"
+        },
+        "away": {
+          "id": "team_kbt",
+          "name": "KBT",
+          "short_name": "KBT",
+          "logo": "https://cricketvectors.akamaized.net/Teams/XT.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "KBT",
+          "score": "1",
+          "runs": 1,
+          "wickets": 0,
+          "overs": "1.1",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "KBT  PP",
+          "score": "1",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": 125,
+        "required_balls": 35,
+        "crr": 0.86,
+        "rrr": 21.43,
+        "current_ball": null,
+        "full_scorecard": null
+      },
+      "current_batsmen": [
+        {
+          "name": "K B Nair",
+          "runs": 0,
+          "balls": 1,
+          "is_striker": false
+        },
+        {
+          "name": "J Joby",
+          "runs": 0,
+          "balls": 1,
+          "is_striker": true
+        }
+      ],
+      "yet_to_bat": [],
+      "current_bowler": {
+        "name": "A Praveen",
+        "overs": "0.1",
+        "runs": 0,
+        "wickets": 1
+      },
+      "last_ball": {
+        "ball": null,
+        "value": null,
+        "event": null,
+        "isWicket": false
+      },
+      "overs": [
+        {
+          "over": "1",
+          "balls": [
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "1"
+        },
+        {
+          "over": "2",
+          "balls": [
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            }
+          ],
+          "total": "0"
+        }
+      ],
+      "commentary": [],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "win_probability_text": null,
+        "favorite": null,
+        "projected_scores": [
+          {
+            "rate": 0.86,
+            "projected_runs": 1,
+            "text": "0.86 R.R: 1"
+          },
+          {
+            "rate": 4,
+            "projected_runs": 6,
+            "text": "4 R.R: 6"
+          },
+          {
+            "rate": 8,
+            "projected_runs": 14,
+            "text": "8 R.R: 14"
+          },
+          {
+            "rate": 12,
+            "projected_runs": 21,
+            "text": "12 R.R: 21"
+          },
+          {
+            "rate": 17,
+            "projected_runs": 29,
+            "text": "17 R.R: 29"
+          }
+        ]
+      },
+      "odds": {
+        "favorite": null,
+        "home_win_percentage": null,
+        "away_win_percentage": null,
+        "win_probability": null,
+        "market_rates": null,
+        "betting_summary": null
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null,
+      "_lastUpdated": "2026-08-26T16:48:37.955Z",
+      "_updateCount": 1
+    },
+    {
+      "match_id": "kas-vs-noi-22nd-match-uttar-pradesh-t20-league-2026-match-updates-133H",
+      "match_url": "https://crex.com/cricket-live-score/kas-vs-noi-22nd-match-uttar-pradesh-t20-league-2026-match-updates-133H",
+      "series": {
+        "id": "series_1787762918039",
+        "name": "KAS vs NOI, 22nd T20, UP T20 2026  live",
+        "short_name": "KAS vs NOI, 22nd T20",
+        "season": "2026"
+      },
+      "match": {
+        "number": "22nd T20",
+        "format": "T20",
+        "status": "NOI need 61 runs  in 95 balls",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": "3.6"
+      },
+      "venue": {
+        "id": "venue_1787762918039",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_noi__pp",
+          "name": "NOI  PP",
+          "short_name": "KAS",
+          "logo": "https://crex.com/assets/img/Team_Flags.png"
+        },
+        "away": {
+          "id": "team_noi",
+          "name": "NOI",
+          "short_name": "NOI",
+          "logo": "https://cricketvectors.akamaized.net/Teams/SJ.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "NOI",
+          "score": "29",
+          "runs": 29,
+          "wickets": 0,
+          "overs": "4.1",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "NOI  PP",
+          "score": "29",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": 61,
+        "required_balls": 95,
+        "crr": 6.96,
+        "rrr": 3.85,
+        "current_ball": "3.6",
+        "full_scorecard": null
+      },
+      "current_batsmen": [
+        {
+          "name": "A Sharma",
+          "runs": 16,
+          "balls": 11,
+          "is_striker": true
+        },
+        {
+          "name": "A Choudhary",
+          "runs": 4,
+          "balls": 12,
+          "is_striker": false
+        }
+      ],
+      "yet_to_bat": [],
+      "current_bowler": {
+        "name": "A Bihari Vipin",
+        "overs": "0.1",
+        "runs": 4,
+        "wickets": 0
+      },
+      "last_ball": {
+        "ball": "3.6",
+        "value": "0",
+        "event": "dot ball",
+        "isWicket": false
+      },
+      "overs": [
+        {
+          "over": "2",
+          "balls": [
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "4wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            }
+          ],
+          "total": "9"
+        },
+        {
+          "over": "3",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "6"
+        },
+        {
+          "over": "4",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "2",
+              "event": "two runs",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "wd",
+              "event": "wide",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "4"
+        },
+        {
+          "over": "5",
+          "balls": [
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            }
+          ],
+          "total": "4"
+        }
+      ],
+      "commentary": [
+        {
+          "ball": "3.6",
+          "result": "0",
+          "text": "Dot to finish, full and on the off stump, driven to mid-off.",
+          "isWicket": false
+        },
+        {
+          "ball": "3.5",
+          "result": "0",
+          "text": "Beaten! Length delivery, on the off stump, Anivesh attempts a drive but misses.",
+          "isWicket": false
+        },
+        {
+          "ball": "3.5",
+          "result": "WD",
+          "text": "WIDE! Too far away outside the off stump here.",
+          "isWicket": false
+        },
+        {
+          "ball": "3.4",
+          "result": "0",
+          "text": "Sangam is giving away far too many extras here, short and down the leg side. A review taken by Kashi to check the WIDE BALL decision. Replays show that the batter is crouching and the on-field decision gets overturned. It's a fair delivery.",
+          "isWicket": false
+        },
+        {
+          "ball": "3.3",
+          "result": "2",
+          "text": "Good length delivery, on the off stump, miscues his drive through mid-wicket for a couple of runs.",
+          "isWicket": false
+        },
+        {
+          "ball": "3.2",
+          "result": "0",
+          "text": "Short and on the off stump, Anivesh lets it sail through.",
+          "isWicket": false
+        }
+      ],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "win_probability_text": null,
+        "favorite": null,
+        "projected_scores": [
+          {
+            "rate": 6.96,
+            "projected_runs": 8,
+            "text": "6.96 R.R: 8"
+          },
+          {
+            "rate": 34,
+            "projected_runs": 35,
+            "text": "34 R.R: 35"
+          }
+        ]
+      },
+      "odds": {
+        "favorite": null,
+        "home_win_percentage": null,
+        "away_win_percentage": null,
+        "win_probability": null,
+        "market_rates": null,
+        "betting_summary": null
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null,
+      "_lastUpdated": "2026-08-26T16:48:38.047Z",
+      "_updateCount": 1
+    },
+    {
+      "match_id": "odw-vs-pd-eliminator-1st-match-delhi-premier-t20-league-2026-match-updates-13CA",
+      "match_url": "https://crex.com/cricket-live-score/odw-vs-pd-eliminator-1st-match-delhi-premier-t20-league-2026-match-updates-13CA",
+      "series": {
+        "id": "series_1787762918048",
+        "name": "ODW vs PD, Eliminator 1 T20, DPL 2026  live",
+        "short_name": "ODW vs PD, Eliminato",
+        "season": "2026"
+      },
+      "match": {
+        "number": "Eliminator 1",
+        "format": "T20",
+        "status": "PD need 95 runs  in 78 balls",
+        "start_time": null,
+        "current_innings": 2,
+        "current_ball": "6.5"
+      },
+      "venue": {
+        "id": "venue_1787762918048",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_odw",
+          "name": "ODW",
+          "short_name": "ODW",
+          "logo": "https://crex.com/assets/img/Team_Flags.png"
+        },
+        "away": {
+          "id": "team_pd",
+          "name": "PD",
+          "short_name": "PD",
+          "logo": "https://cricketvectors.akamaized.net/Teams/X7.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "PD",
+          "score": "85",
+          "runs": 85,
+          "wickets": 0,
+          "overs": "7.0",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "ODW",
+          "score": "85",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": 95,
+        "required_balls": 78,
+        "crr": 12.14,
+        "rrr": 7.31,
+        "current_ball": "6.5",
+        "full_scorecard": null
+      },
+      "current_batsmen": [
+        {
+          "name": "A Gaur",
+          "runs": 36,
+          "balls": 22,
+          "is_striker": true
+        },
+        {
+          "name": "D Lakra",
+          "runs": 39,
+          "balls": 16,
+          "is_striker": false
+        }
+      ],
+      "yet_to_bat": [],
+      "current_bowler": {
+        "name": "P Saluja",
+        "overs": "1.0",
+        "runs": 9,
+        "wickets": 0
+      },
+      "last_ball": {
+        "ball": "6.5",
+        "value": "1",
+        "event": "single",
+        "isWicket": false
+      },
+      "overs": [
+        {
+          "over": "5",
+          "balls": [
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "6",
+              "event": "six",
+              "isWicket": false
+            },
+            {
+              "value": "2",
+              "event": "two runs",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            }
+          ],
+          "total": "18"
+        },
+        {
+          "over": "6",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "6",
+              "event": "six",
+              "isWicket": false
+            },
+            {
+              "value": "6",
+              "event": "six",
+              "isWicket": false
+            }
+          ],
+          "total": "21"
+        },
+        {
+          "over": "7",
+          "balls": [
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "2",
+              "event": "two runs",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            }
+          ],
+          "total": "9"
+        }
+      ],
+      "commentary": [
+        {
+          "ball": "6.5",
+          "result": "1",
+          "text": "125.8 kph, back of a length outside off. Punched on the rise towards long on for a single.",
+          "isWicket": false
+        },
+        {
+          "ball": "6.4",
+          "result": "2",
+          "text": "Pace-off, short and wide of off at 113 kph. Gaur slices this past a gap at backward point, the sweeper cover fielder sprints to his left, dives and keeps it in. The batters rush back for a second as the throw comes in to the keeper, who gets hit after the ball bounces awkwardly in front of him. There's a boundary check, but the fielder never touched the ropes.",
+          "isWicket": false
+        },
+        {
+          "ball": "6.3",
+          "result": "1",
+          "text": "Short of a length again, outside off. Lakra, on top of the ball, drives on the up towards deep cover and settles for a single.",
+          "isWicket": false
+        },
+        {
+          "ball": "6.2",
+          "result": "1",
+          "text": "Short of a length, outside off stump at 123.9 kph. Gaur, walking down the wicket, jabs this towards sweeper cover and collects a single.",
+          "isWicket": false
+        },
+        {
+          "ball": "6.1",
+          "result": "4",
+          "text": "GAUR GREETS SALUJA WITH A BOUNDARY! Short and outside off stump from over the wicket, angled towards leg stump. Gaur swivels and whips this through to the fine leg boundary!",
+          "isWicket": false
+        }
+      ],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "win_probability_text": null,
+        "favorite": null,
+        "projected_scores": [
+          {
+            "rate": 12.14,
+            "projected_runs": 14,
+            "text": "12.14 R.R: 14"
+          }
+        ]
+      },
+      "odds": {
+        "favorite": null,
+        "home_win_percentage": null,
+        "away_win_percentage": null,
+        "win_probability": null,
+        "market_rates": null,
+        "betting_summary": null
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null,
+      "_lastUpdated": "2026-08-26T16:48:38.051Z",
+      "_updateCount": 1
+    }
+  ],
+  "timestamp": "2026-08-26T16:48:39.557Z",
+  "requestId": "1787762919556_7wid5t",
+  "fromCache": true,
+  "forceRefresh": true,
+  "message": "Background refresh started - check WebSocket for updates"
+}

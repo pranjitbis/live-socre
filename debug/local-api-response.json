@@ -1,0 +1,341 @@
+{
+  "success": true,
+  "source": "crex",
+  "type": "live",
+  "total": 4,
+  "data": [
+    {
+      "match_id": "live_1787762909253_n8enoi",
+      "match_url": "https://crex.com/cricket-live-score/kk-vs-tgc-qualifier-2nd-match-tamil-nadu-premier-league-2026-match-updates-12ZP",
+      "series": {
+        "id": "series_1787762909253",
+        "name": "TNPL 2026",
+        "short_name": "",
+        "season": "2026"
+      },
+      "match": {
+        "number": null,
+        "format": null,
+        "status": "Live",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": null
+      },
+      "venue": {
+        "id": "venue_1787762909253",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_kk",
+          "name": "KK",
+          "short_name": "KK",
+          "logo": "https://cricketvectors.akamaized.net/Teams/2U.png"
+        },
+        "away": {
+          "id": "team_tgc",
+          "name": "TGC",
+          "short_name": "TGC",
+          "logo": "https://cricketvectors.akamaized.net/Teams/R0.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "KK",
+          "score": "183",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "TGC",
+          "score": "80",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": null,
+        "required_balls": null,
+        "crr": null,
+        "rrr": null,
+        "current_ball": null
+      },
+      "current_batsmen": [],
+      "current_bowler": {
+        "name": "",
+        "overs": "",
+        "runs": null,
+        "wickets": null
+      },
+      "overs": [],
+      "commentary": [],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "projected_scores": []
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null
+    },
+    {
+      "match_id": "live_1787762910851_h57lxf",
+      "match_url": "https://crex.com/cricket-live-score/ar-vs-kbt-14th-match-kerala-cricket-league-t20-2026-match-updates-13G8",
+      "series": {
+        "id": "series_1787762910851",
+        "name": "KCL T20 2026",
+        "short_name": "",
+        "season": "2026"
+      },
+      "match": {
+        "number": null,
+        "format": null,
+        "status": "Live",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": null
+      },
+      "venue": {
+        "id": "venue_1787762910851",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_ar",
+          "name": "AR",
+          "short_name": "AR",
+          "logo": "https://cricketvectors.akamaized.net/Teams/XW.png"
+        },
+        "away": {
+          "id": "team_kbt",
+          "name": "KBT",
+          "short_name": "KBT",
+          "logo": "https://cricketvectors.akamaized.net/Teams/XT.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "AR",
+          "score": "125",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "KBT",
+          "score": "1",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": null,
+        "required_balls": null,
+        "crr": null,
+        "rrr": null,
+        "current_ball": null
+      },
+      "current_batsmen": [],
+      "current_bowler": {
+        "name": "",
+        "overs": "",
+        "runs": null,
+        "wickets": null
+      },
+      "overs": [],
+      "commentary": [],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "projected_scores": []
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null
+    },
+    {
+      "match_id": "live_1787762919352_jci7yw",
+      "match_url": "https://crex.com/cricket-live-score/kas-vs-noi-22nd-match-uttar-pradesh-t20-league-2026-match-updates-133H",
+      "series": {
+        "id": "series_1787762919352",
+        "name": "UP T20 2026",
+        "short_name": "",
+        "season": "2026"
+      },
+      "match": {
+        "number": null,
+        "format": null,
+        "status": "Live",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": null
+      },
+      "venue": {
+        "id": "venue_1787762919352",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_kas",
+          "name": "KAS",
+          "short_name": "KAS",
+          "logo": "https://cricketvectors.akamaized.net/Teams/SK.png"
+        },
+        "away": {
+          "id": "team_noi",
+          "name": "NOI",
+          "short_name": "NOI",
+          "logo": "https://cricketvectors.akamaized.net/Teams/SJ.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "KAS",
+          "score": "",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "NOI",
+          "score": "25",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": null,
+        "required_balls": null,
+        "crr": null,
+        "rrr": null,
+        "current_ball": null
+      },
+      "current_batsmen": [],
+      "current_bowler": {
+        "name": "",
+        "overs": "",
+        "runs": null,
+        "wickets": null
+      },
+      "overs": [],
+      "commentary": [],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "projected_scores": []
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null
+    },
+    {
+      "match_id": "live_1787762908733_glmrft",
+      "match_url": "https://crex.com/cricket-live-score/odw-vs-pd-eliminator-1st-match-delhi-premier-t20-league-2026-match-updates-13CA",
+      "series": {
+        "id": "series_1787762908733",
+        "name": "DPL 2026",
+        "short_name": "",
+        "season": "2026"
+      },
+      "match": {
+        "number": null,
+        "format": null,
+        "status": "Live",
+        "start_time": null,
+        "current_innings": null,
+        "current_ball": null
+      },
+      "venue": {
+        "id": "venue_1787762908733",
+        "name": null
+      },
+      "teams": {
+        "home": {
+          "id": "team_odw",
+          "name": "ODW",
+          "short_name": "ODW",
+          "logo": "https://cricketvectors.akamaized.net/Teams/1AD.png"
+        },
+        "away": {
+          "id": "team_pd",
+          "name": "PD",
+          "short_name": "PD",
+          "logo": "https://cricketvectors.akamaized.net/Teams/X7.png"
+        }
+      },
+      "scoreboard": {
+        "batting_team": {
+          "name": "ODW",
+          "score": "",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "bowling_team": {
+          "name": "PD",
+          "score": "84",
+          "runs": null,
+          "wickets": null,
+          "overs": "",
+          "balls": null
+        },
+        "target": null,
+        "required_runs": null,
+        "required_balls": null,
+        "crr": null,
+        "rrr": null,
+        "current_ball": null
+      },
+      "current_batsmen": [],
+      "current_bowler": {
+        "name": "",
+        "overs": "",
+        "runs": null,
+        "wickets": null
+      },
+      "overs": [],
+      "commentary": [],
+      "prediction": {
+        "home_probability": null,
+        "away_probability": null,
+        "projected_scores": []
+      },
+      "toss": {
+        "status": "unknown",
+        "winner": null,
+        "decision": null
+      },
+      "result": null,
+      "weather": null,
+      "countdown": null
+    }
+  ],
+  "timestamp": "2026-08-26T16:48:42.973Z",
+  "requestId": "1787762892572_g53sib",
+  "fromCache": false,
+  "forceRefresh": true,
+  "duration": 30436
+}

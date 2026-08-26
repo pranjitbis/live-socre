@@ -1083,80 +1083,130 @@ class LiveScraper extends BaseCrexScraper {
           return text.replace(/<[^>]*>/g, '').trim();
         }
 
+        function parseRunsAndOvers(containerEl) {
+          let scoreText = '';
+          let oversText = '';
+          if (!containerEl) return { scoreText, oversText };
+          const spans = Array.from(containerEl.querySelectorAll('span'));
+          if (spans.length > 0) {
+            for (const span of spans) {
+              const text = span.textContent.trim();
+              if (!text) continue;
+              if (text.includes('(') || text.includes(')') || /^\d+\.\d+$/.test(text) || /^\d+b$/.test(text)) {
+                oversText = text.replace(/[()]/g, '').trim();
+              } else if (/^\d+[-\/]\d+$/.test(text) || /^\d+$/.test(text)) {
+                scoreText = text;
+              } else if (!scoreText && /^\d+/.test(text)) {
+                scoreText = text;
+              }
+            }
+          } else {
+            const text = containerEl.textContent.trim();
+            const overMatch = text.match(/\((\d+\.\d+)\)/) || text.match(/\((\d+b)\)/);
+            if (overMatch) oversText = overMatch[1];
+            const scoreMatch = text.replace(/\([^)]*\)/g, '').trim();
+            if (scoreMatch) scoreText = scoreMatch;
+          }
+          return { scoreText, oversText };
+        }
+
         // Target actual CREX live-score-card DOM structure
         const liveScoreCard = document.querySelector('.live-score-card, .scoreboard, .match-header');
         
         if (liveScoreCard) {
-          const innings = liveScoreCard.querySelectorAll('.team-inning');
+          const innings = Array.from(liveScoreCard.querySelectorAll('.team-inning'));
           if (innings.length >= 1) {
             const battingEl = innings[0];
             const nameEl = battingEl.querySelector('.team-name, .name');
             if (nameEl) scoreboard.batting.name = extractCleanName(nameEl);
 
-            const scoreSpan = battingEl.querySelector('.runs.f-runs span:nth-child(1), .team-score span:nth-child(1), .runs.f-runs, .team-score, .runs');
-            const oversSpan = battingEl.querySelector('.runs.f-runs span:nth-child(2), .team-score span:nth-child(2)');
-
-            if (scoreSpan) {
-              const parsed = parseScore(scoreSpan.textContent.trim());
-              if (parsed.runs !== null) {
+            const runsContainer = battingEl.querySelector('.runs, .team-score');
+            if (runsContainer) {
+              const { scoreText, oversText } = parseRunsAndOvers(runsContainer);
+              if (scoreText) {
+                const parsed = parseScore(scoreText);
                 scoreboard.batting.score = parsed.score;
                 scoreboard.batting.runs = parsed.runs;
                 scoreboard.batting.wickets = parsed.wickets;
-                if (oversSpan) {
-                  scoreboard.batting.overs = oversSpan.textContent.trim();
-                } else {
-                  scoreboard.batting.overs = parsed.overs;
-                }
+              }
+              if (oversText) {
+                scoreboard.batting.overs = oversText;
               }
             }
 
             if (innings.length >= 2) {
               const bowlingEl = innings[1];
               const bNameEl = bowlingEl.querySelector('.team-name, .name');
-              if (bNameEl) scoreboard.bowling.name = extractCleanName(bNameEl);
+              if (bNameEl) {
+                const rawName = bNameEl.textContent.trim();
+                if (!rawName.includes('CRR') && !rawName.includes('RRR') && !rawName.includes('need')) {
+                  scoreboard.bowling.name = extractCleanName(bNameEl);
+                }
+              }
 
-              const bScoreSpan = bowlingEl.querySelector('.runs.f-runs span:nth-child(1), .team-score span:nth-child(1), .runs.f-runs, .team-score, .runs');
-              if (bScoreSpan && bScoreSpan.textContent.trim()) {
-                const parsed = parseScore(bScoreSpan.textContent.trim());
-                if (parsed.runs !== null) {
+              const bRunsContainer = bowlingEl.querySelector('.runs, .team-score');
+              if (bRunsContainer) {
+                const { scoreText, oversText } = parseRunsAndOvers(bRunsContainer);
+                if (scoreText) {
+                  const parsed = parseScore(scoreText);
                   scoreboard.bowling.score = parsed.score;
                   scoreboard.bowling.runs = parsed.runs;
                   scoreboard.bowling.wickets = parsed.wickets;
+                }
+                if (oversText) {
+                  scoreboard.bowling.overs = oversText;
                 }
               }
             }
           }
         } else {
           // Fallback for team-result containers
-          const teamResults = document.querySelectorAll('.team-result, .team-innig, .live-data, .team-inning-card');
+          const teamResults = Array.from(document.querySelectorAll('.team-result, .team-innig, .live-data, .team-inning-card'))
+                                   .filter(el => !el.classList.contains('result-box'));
           if (teamResults.length >= 2) {
-            let battingEl = teamResults[0];
-            let bowlingEl = teamResults[1];
+            const battingEl = teamResults[0];
+            const bowlingEl = teamResults[1];
 
             if (battingEl) {
               const nameEl = battingEl.querySelector('.team-name, .name, .team-title');
               if (nameEl) scoreboard.batting.name = extractCleanName(nameEl);
 
-              const runsEl = battingEl.querySelector('.runs.f-runs, .team-score, .runs, .score');
+              const runsEl = battingEl.querySelector('.runs, .team-score, .score');
               if (runsEl) {
-                const parsed = parseScore(runsEl.textContent.trim());
-                scoreboard.batting.score = parsed.score;
-                scoreboard.batting.runs = parsed.runs;
-                scoreboard.batting.wickets = parsed.wickets;
-                scoreboard.batting.overs = parsed.overs;
+                const { scoreText, oversText } = parseRunsAndOvers(runsEl);
+                if (scoreText) {
+                  const parsed = parseScore(scoreText);
+                  scoreboard.batting.score = parsed.score;
+                  scoreboard.batting.runs = parsed.runs;
+                  scoreboard.batting.wickets = parsed.wickets;
+                }
+                if (oversText) {
+                  scoreboard.batting.overs = oversText;
+                }
               }
             }
 
             if (bowlingEl) {
               const nameEl = bowlingEl.querySelector('.team-name, .name, .team-title');
-              if (nameEl) scoreboard.bowling.name = extractCleanName(nameEl);
+              if (nameEl) {
+                const rawName = nameEl.textContent.trim();
+                if (!rawName.includes('CRR') && !rawName.includes('RRR') && !rawName.includes('need')) {
+                  scoreboard.bowling.name = extractCleanName(nameEl);
+                }
+              }
 
-              const runsEl = bowlingEl.querySelector('.runs.f-runs, .team-score, .runs, .score');
-              if (runsEl && runsEl.textContent.trim()) {
-                const parsed = parseScore(runsEl.textContent.trim());
-                scoreboard.bowling.score = parsed.score;
-                scoreboard.bowling.runs = parsed.runs;
-                scoreboard.bowling.wickets = parsed.wickets;
+              const runsEl = bowlingEl.querySelector('.runs, .team-score, .score');
+              if (runsEl) {
+                const { scoreText, oversText } = parseRunsAndOvers(runsEl);
+                if (scoreText) {
+                  const parsed = parseScore(scoreText);
+                  scoreboard.bowling.score = parsed.score;
+                  scoreboard.bowling.runs = parsed.runs;
+                  scoreboard.bowling.wickets = parsed.wickets;
+                }
+                if (oversText) {
+                  scoreboard.bowling.overs = oversText;
+                }
               }
             }
           }
@@ -2370,7 +2420,8 @@ class LiveScraper extends BaseCrexScraper {
         const t2Node = document.querySelector('.team-2, .team-b, .away-team-card, .team-card:nth-child(2)');
 
         if (t1Node) {
-          const nameEl = t1Node.querySelector('.team-name, .team-title, .name-text, a, p');
+          const isNameEl = t1Node.classList.contains('team-name') || t1Node.classList.contains('team-title') || t1Node.classList.contains('name-text');
+          const nameEl = isNameEl ? t1Node : t1Node.querySelector('.team-name, .team-title, .name-text, a, p');
           const shortEl = t1Node.querySelector('.team-short-name, .short-name, .team-code');
           const imgEl = t1Node.querySelector('img');
 
@@ -2380,7 +2431,8 @@ class LiveScraper extends BaseCrexScraper {
         }
 
         if (t2Node) {
-          const nameEl = t2Node.querySelector('.team-name, .team-title, .name-text, a, p');
+          const isNameEl = t2Node.classList.contains('team-name') || t2Node.classList.contains('team-title') || t2Node.classList.contains('name-text');
+          const nameEl = isNameEl ? t2Node : t2Node.querySelector('.team-name, .team-title, .name-text, a, p');
           const shortEl = t2Node.querySelector('.team-short-name, .short-name, .team-code');
           const imgEl = t2Node.querySelector('img');
 
@@ -2391,7 +2443,7 @@ class LiveScraper extends BaseCrexScraper {
 
         // Fallback: check .live-score-card .team-inning
         if (!res.home.name || !res.away.name) {
-          const innings = document.querySelectorAll('.live-score-card .team-inning, .team-result');
+          const innings = Array.from(document.querySelectorAll('.live-score-card .team-inning, .team-inning'));
           if (innings.length >= 2) {
             const inn1 = innings[0];
             const inn2 = innings[1];
@@ -2548,6 +2600,64 @@ class LiveScraper extends BaseCrexScraper {
         awayShort = awayTeamName.substring(0, 3).toUpperCase();
       }
 
+      // Reconcile batting and bowling team names
+      const bTeamName = scoreboard.batting.name || homeTeamName;
+      let boTeamName = scoreboard.bowling.name || awayTeamName;
+      
+      if (bTeamName === boTeamName) {
+        if (bTeamName === homeTeamName) {
+          boTeamName = awayTeamName;
+        } else {
+          boTeamName = homeTeamName;
+        }
+      }
+
+      // Resolve the list-level scores and overs for fallback usage based on team name matching
+      const homeScore = match.team1?.score || '';
+      const homeOvers = match.team1?.overs || '';
+      const awayScore = match.team2?.score || '';
+      const awayOvers = match.team2?.overs || '';
+
+      const battingListScore = bTeamName === homeTeamName ? homeScore : awayScore;
+      const battingListOvers = bTeamName === homeTeamName ? homeOvers : awayOvers;
+
+      const bowlingListScore = boTeamName === homeTeamName ? homeScore : awayScore;
+      const bowlingListOvers = boTeamName === homeTeamName ? homeOvers : awayOvers;
+
+      function parseRunsWicketsFromScore(scoreStr) {
+        let runs = null;
+        let wickets = null;
+        if (!scoreStr) return { runs, wickets };
+        const match = scoreStr.match(/(\d+)\s*[\/-]\s*(\d+)/);
+        if (match) {
+          runs = parseInt(match[1]);
+          wickets = parseInt(match[2]);
+        } else {
+          const single = scoreStr.match(/^(\d+)/);
+          if (single) {
+            runs = parseInt(single[1]);
+            wickets = 0;
+          }
+        }
+        return { runs, wickets };
+      }
+
+      let battingRuns = scoreboard.batting.runs;
+      let battingWickets = scoreboard.batting.wickets;
+      if (battingRuns === null) {
+        const parsed = parseRunsWicketsFromScore(scoreboard.batting.score || battingListScore);
+        battingRuns = parsed.runs;
+        battingWickets = parsed.wickets;
+      }
+
+      let bowlingRuns = scoreboard.bowling.runs;
+      let bowlingWickets = scoreboard.bowling.wickets;
+      if (bowlingRuns === null) {
+        const parsed = parseRunsWicketsFromScore(scoreboard.bowling.score || bowlingListScore);
+        bowlingRuns = parsed.runs;
+        bowlingWickets = parsed.wickets;
+      }
+
       const odds = await this.extractOdds(page, prediction, homeTeamName, awayTeamName);
 
       const matchId = match.url.match(/\/cricket-live-score\/([A-Za-z0-9-]+)/i);
@@ -2590,19 +2700,19 @@ class LiveScraper extends BaseCrexScraper {
         },
         scoreboard: {
           batting_team: {
-            name: scoreboard.batting.name || homeTeamName,
-            score: scoreboard.batting.score || match.team1.score || '',
-            runs: scoreboard.batting.runs,
-            wickets: scoreboard.batting.wickets,
-            overs: scoreboard.batting.overs || match.team1.overs || '',
+            name: bTeamName,
+            score: scoreboard.batting.score || battingListScore || '',
+            runs: battingRuns,
+            wickets: battingWickets,
+            overs: scoreboard.batting.overs || battingListOvers || '',
             balls: scoreboard.batting.balls || null,
           },
           bowling_team: {
-            name: scoreboard.bowling.name || awayTeamName,
-            score: scoreboard.bowling.score || match.team2.score || '',
-            runs: scoreboard.bowling.runs,
-            wickets: scoreboard.bowling.wickets,
-            overs: scoreboard.bowling.overs || match.team2.overs || '',
+            name: boTeamName,
+            score: scoreboard.bowling.score || bowlingListScore || '',
+            runs: bowlingRuns,
+            wickets: bowlingWickets,
+            overs: scoreboard.bowling.overs || bowlingListOvers || '',
             balls: scoreboard.bowling.balls || null,
           },
           target: scoreboard.target,

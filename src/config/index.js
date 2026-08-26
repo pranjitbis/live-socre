@@ -6,12 +6,17 @@ const config = {
   env: process.env.NODE_ENV || 'development',
 
   database: {
-    url: process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.MYSQLURL || null,
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'railway',
+    url: process.env.MYSQL_URL || 
+         process.env.MYSQLURL || 
+         process.env.MYSQLPRIVATE_URL || 
+         (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('mysql.railway.internal') ? process.env.DATABASE_URL : null) || 
+         (!process.env.RAILWAY_ENVIRONMENT ? process.env.DATABASE_URL : null) ||
+         null,
+    host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.MYSQLPORT || process.env.DB_PORT) || 3306,
+    user: process.env.MYSQLUSER || process.env.DB_USER || 'root',
+    password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '',
+    database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'railway',
     connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10,
     waitForConnections: true,
     queueLimit: 0,
