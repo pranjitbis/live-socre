@@ -160,14 +160,14 @@
         background: #ffaa00;
         color: #1a1a2e;
       }
+      .btn-info {
+        background: #00b894;
+        color: #fff;
+      }
       .btn-secondary {
         background: rgba(255, 255, 255, 0.1);
         color: #fff;
         border: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      .btn-info {
-        background: #00b894;
-        color: #fff;
       }
       .btn:disabled {
         opacity: 0.5;
@@ -279,6 +279,10 @@
         background: #00cc88;
         color: #1a1a2e;
       }
+      .match-status.rain {
+        background: #667eea;
+        color: #fff;
+      }
 
       /* Teams */
       .teams {
@@ -304,6 +308,12 @@
         margin: 0 auto 5px;
         font-size: 1.2em;
       }
+      .team-logo img {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: contain;
+      }
       .team-name {
         font-size: 0.9em;
         font-weight: 600;
@@ -312,6 +322,11 @@
         font-size: 1.4em;
         font-weight: 700;
         margin-top: 3px;
+      }
+      .team-score .wickets {
+        font-size: 0.6em;
+        opacity: 0.6;
+        font-weight: 400;
       }
       .team-overs {
         font-size: 0.7em;
@@ -422,6 +437,7 @@
         font-weight: 700;
         min-width: 35px;
         opacity: 0.6;
+        font-size: 0.8em;
       }
       .over-balls {
         display: flex;
@@ -433,6 +449,8 @@
         border-radius: 3px;
         font-size: 0.85em;
         font-weight: 600;
+        min-width: 18px;
+        text-align: center;
       }
       .over-ball.wide {
         background: #ffaa00;
@@ -513,11 +531,20 @@
       /* Toss */
       .toss-info {
         font-size: 0.75em;
-        opacity: 0.6;
+        opacity: 0.7;
         margin: 5px 0;
         padding: 5px 10px;
         background: rgba(255, 255, 255, 0.03);
         border-radius: 4px;
+        border-left: 3px solid #667eea;
+      }
+      .toss-info .winner {
+        color: #00cc88;
+        font-weight: 600;
+      }
+      .toss-info .decision {
+        color: #ffaa00;
+        font-weight: 600;
       }
 
       /* Weather */
@@ -574,11 +601,13 @@
         font-size: 3em;
         margin-bottom: 15px;
       }
+      .no-matches .sub-text {
+        font-size: 0.8em;
+        opacity: 0.7;
+        margin-top: 10px;
+      }
 
-      /* ============================================================
-         ⭐ TEAM FORM SECTION STYLES
-         ============================================================ */
-
+      /* Team Form Section */
       .team-form-section {
         background: rgba(255, 255, 255, 0.03);
         border-radius: 16px;
@@ -586,7 +615,6 @@
         margin-bottom: 25px;
         border: 1px solid rgba(255, 255, 255, 0.05);
       }
-
       .team-form-header {
         display: flex;
         align-items: center;
@@ -595,39 +623,33 @@
         flex-wrap: wrap;
         gap: 10px;
       }
-
       .team-form-title {
         font-size: 1.2em;
         font-weight: 700;
         color: #fff;
       }
-
       .team-form-title span {
         opacity: 0.6;
         font-size: 0.8em;
         font-weight: 400;
       }
-
       .team-form-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 20px;
       }
-
       @media (max-width: 768px) {
         .team-form-grid {
           grid-template-columns: 1fr;
         }
       }
 
-      /* Team Form Card */
       .team-form-card {
         background: rgba(255, 255, 255, 0.03);
         border-radius: 12px;
         padding: 15px;
         border: 1px solid rgba(255, 255, 255, 0.05);
       }
-
       .team-form-card .team-header {
         display: flex;
         align-items: center;
@@ -636,7 +658,6 @@
         padding-bottom: 10px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       }
-
       .team-form-card .team-header img {
         width: 36px;
         height: 36px;
@@ -645,25 +666,21 @@
         object-fit: contain;
         padding: 4px;
       }
-
       .team-form-card .team-header .team-full-name {
         font-weight: 600;
         font-size: 0.95em;
       }
-
       .team-form-card .team-header .team-short-name {
         opacity: 0.5;
         font-size: 0.8em;
       }
 
-      /* Form Results */
       .form-results {
         display: flex;
         gap: 6px;
         flex-wrap: wrap;
         margin-bottom: 10px;
       }
-
       .form-result {
         width: 28px;
         height: 28px;
@@ -675,38 +692,31 @@
         font-weight: 700;
         transition: all 0.3s;
       }
-
       .form-result.win {
         background: #00cc88;
         color: #1a1a2e;
       }
-
       .form-result.loss {
         background: #ff4444;
         color: #fff;
       }
-
       .form-result.draw {
         background: #ffaa00;
         color: #1a1a2e;
       }
-
       .form-result.upcoming {
         background: rgba(255, 255, 255, 0.1);
         color: rgba(255, 255, 255, 0.3);
       }
-
       .form-result.current {
         border: 2px solid #667eea;
         box-shadow: 0 0 15px rgba(102, 126, 234, 0.3);
       }
 
-      /* Match History List */
       .match-history {
         max-height: 200px;
         overflow-y: auto;
       }
-
       .match-history::-webkit-scrollbar {
         width: 3px;
       }
@@ -729,18 +739,15 @@
         text-decoration: none;
         color: #fff;
       }
-
       .match-history-item:hover {
         background: rgba(255, 255, 255, 0.05);
       }
-
       .match-history-item .h-team {
         display: flex;
         align-items: center;
         gap: 6px;
         flex: 1;
       }
-
       .match-history-item .h-team img {
         width: 20px;
         height: 20px;
@@ -749,24 +756,20 @@
         background: rgba(255, 255, 255, 0.05);
         padding: 2px;
       }
-
       .match-history-item .h-team .h-name {
         font-size: 0.8em;
       }
-
       .match-history-item .h-score {
         font-size: 0.8em;
         font-weight: 600;
         min-width: 45px;
         text-align: right;
       }
-
       .match-history-item .h-vs {
         opacity: 0.3;
         font-size: 0.7em;
         margin: 0 4px;
       }
-
       .match-history-item .h-result {
         font-size: 0.65em;
         font-weight: 700;
@@ -775,22 +778,18 @@
         min-width: 22px;
         text-align: center;
       }
-
       .match-history-item .h-result.win {
         background: rgba(0, 204, 136, 0.2);
         color: #00cc88;
       }
-
       .match-history-item .h-result.loss {
         background: rgba(255, 68, 68, 0.2);
         color: #ff4444;
       }
-
       .match-history-item .h-result.upcoming {
         background: rgba(255, 255, 255, 0.05);
         color: rgba(255, 255, 255, 0.3);
       }
-
       .match-history-item .h-match-name {
         font-size: 0.6em;
         opacity: 0.4;
@@ -1040,7 +1039,7 @@
       // ⭐ CONFIGURATION
       // ============================================================
 
-      // ⭐ Auto-detect WebSocket protocol
+      // ⭐ WebSocket URL - connects to your Node.js server
       function getWebSocketUrl() {
         const isSecure =
           window.location.protocol === 'https:' ||
@@ -1053,6 +1052,7 @@
         return `${protocol}://${host}/ws`;
       }
 
+      // ⭐ API endpoints
       const WS_URL = getWebSocketUrl();
       const API_URL = `/api/scrape/live`;
       const WS_INFO_URL = `/api/ws-info`;
@@ -1067,6 +1067,7 @@
       let lastScoreUpdate = null;
       let autoRefreshInterval = null;
       let connectionProtocol = 'unknown';
+      let isScraping = false;
 
       // ============================================================
       // ⭐ INITIALIZATION
@@ -1076,15 +1077,11 @@
         log('🏏 Dashboard loaded', 'info');
         log(`🔌 WebSocket URL: ${WS_URL}`, 'info');
 
-        // Show protocol info
         const protocol = WS_URL.startsWith('wss') ? 'wss' : 'ws';
         document.getElementById('protocolDisplay').textContent = protocol;
         connectionProtocol = protocol;
 
-        // Auto-connect after 1 second
         setTimeout(connectWS, 1000);
-
-        // Get initial WS info
         setTimeout(getWSInfo, 1500);
       });
 
@@ -1341,12 +1338,11 @@
               connectedSince.toLocaleTimeString();
             reconnectAttempts = 0;
 
-            // Update protocol display
             const protocol = WS_URL.startsWith('wss') ? 'wss' : 'ws';
             document.getElementById('protocolDisplay').textContent = protocol;
             connectionProtocol = protocol;
 
-            // Subscribe to channels
+            // ⭐ Subscribe to channels
             ws.send(
               JSON.stringify({
                 type: 'subscribe',
@@ -1354,14 +1350,14 @@
               })
             );
 
-            // Request initial data
+            // ⭐ Request initial data
             ws.send(
               JSON.stringify({
                 type: 'getLiveMatches',
               })
             );
 
-            // Auto-refresh every 10 seconds
+            // ⭐ Auto-refresh every 10 seconds
             if (autoRefreshInterval) clearInterval(autoRefreshInterval);
             autoRefreshInterval = setInterval(() => {
               if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1570,14 +1566,15 @@
             break;
 
           case 'pong':
-            // Silent ping/pong
             break;
 
           case 'scrape:start':
+            isScraping = true;
             log(`🔄 ${payload.message}`, 'info');
             break;
 
           case 'scrape:complete':
+            isScraping = false;
             const scrapeMatches = Array.isArray(payload.matches) ? payload.matches : [];
             if (scrapeMatches.length > 0) {
               matchCache = scrapeMatches;
@@ -1588,6 +1585,7 @@
             break;
 
           case 'scrape:error':
+            isScraping = false;
             log(`❌ Scrape error: ${payload.error}`, 'error');
             break;
 
@@ -1624,11 +1622,12 @@
             <div class="no-matches">
               <div class="icon">🏏</div>
               <div>No live matches currently in progress</div>
-              <div style="font-size:0.8em;opacity:0.5;margin-top:10px;">
+              <div class="sub-text">
                 ${ws && ws.readyState === WebSocket.OPEN ? '🟢 Connected' : '🔴 Disconnected'}
                 ${connectionProtocol !== 'unknown' ? ` (${connectionProtocol})` : ''}
+                ${isScraping ? ' 🔄 Scraping in progress...' : ''}
               </div>
-              <div style="margin-top:10px;">
+              <div style="margin-top:15px;">
                 <button class="btn btn-warning" onclick="forceRefresh()">🔄 Check for matches</button>
               </div>
             </div>
@@ -1643,15 +1642,67 @@
             const team2Name = match.teams?.away?.name || match.team2?.name || 'Team 2';
             const team1Score = match.scoreboard?.batting_team?.score || match.team1?.score || '0';
             const team2Score = match.scoreboard?.bowling_team?.score || match.team2?.score || '0';
+            const team1Wickets = match.scoreboard?.batting_team?.wickets;
+            const team2Wickets = match.scoreboard?.bowling_team?.wickets;
             const team1Overs = match.scoreboard?.batting_team?.overs || match.team1?.overs || '';
             const team2Overs = match.scoreboard?.bowling_team?.overs || match.team2?.overs || '';
             const status = match.match?.status || match.status || 'LIVE';
             const statusClass = status.toLowerCase();
             const seriesName = match.series?.name || match.series || 'Match';
-            const venue = match.venue?.name || match.venue || 'TBD';
+            const venueObj = match.venue;
+            const venue = (typeof venueObj === 'object' ? venueObj?.name : venueObj) || 'TBD';
             const timestamp = match._lastUpdated || match.timestamp || new Date().toISOString();
             const updateCount = match._updateCount || 0;
             const scoreFlashClass = updateCount > 1 ? 'score-flash' : '';
+
+            const team1Display =
+              team1Wickets !== null && team1Wickets !== undefined
+                ? `${team1Score} <span class="wickets">(${team1Wickets})</span>`
+                : team1Score;
+            const team2Display =
+              team2Wickets !== null && team2Wickets !== undefined
+                ? `${team2Score} <span class="wickets">(${team2Wickets})</span>`
+                : team2Score;
+
+            const pred = match.prediction || {};
+            const odds = match.odds || {};
+            let oddsHtml = '';
+            if (pred.home_probability || pred.away_probability || odds.favorite || odds.betting_summary) {
+              const homeP = pred.home_probability || odds.home_win_percentage || 50;
+              const awayP = pred.away_probability || odds.away_win_percentage || 50;
+              const fav = odds.favorite || (homeP > awayP ? team1Name : team2Name);
+              oddsHtml = `
+                <div class="prediction">
+                  <div class="prediction-item">
+                    <div class="label">WIN PROBABILITY / BETTING ODDS</div>
+                    <div class="value" style="font-size: 0.9em; margin-top: 4px;">
+                      🎯 ${fav ? fav + ' Favored' : 'Equal Odds'} ${odds.market_rates ? `(${odds.market_rates})` : ''}
+                    </div>
+                    <div class="prediction-bar" style="display:flex; height:6px; margin-top:6px;">
+                      <div class="fill home" style="width:${homeP}%; background:#667eea; title:${team1Name} ${homeP}%"></div>
+                      <div class="fill away" style="width:${awayP}%; background:#ff6b6b; title:${team2Name} ${awayP}%"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:0.7em; margin-top:3px; opacity:0.8;">
+                      <span>${team1Name}: ${homeP}%</span>
+                      <span>${team2Name}: ${awayP}%</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }
+
+            const yetToBat = match.yet_to_bat || [];
+            let ytbHtml = '';
+            if (yetToBat.length > 0) {
+              ytbHtml = `
+                <div style="font-size:0.75em; background:rgba(255,255,255,0.03); padding:8px; border-radius:6px; margin:8px 0; border:1px dashed rgba(255,255,255,0.1);">
+                  <div style="opacity:0.6; font-size:0.8em; font-weight:700; margin-bottom:4px;">📋 YET TO BAT</div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    ${yetToBat.map(p => `<span style="background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:10px;">${p.name}${p.avg ? ` (Avg ${p.avg})` : ''}</span>`).join('')}
+                  </div>
+                </div>
+              `;
+            }
 
             const batsmen = match.current_batsmen || [];
             const batsmenHtml =
@@ -1702,9 +1753,14 @@
                   .map(
                     (o) => `
                   <div class="over-item">
-                    <span class="over-number">Over ${o.over}</span>
+                    <span class="over-number">${o.over ? 'Over ' + o.over : ''}</span>
                     <div class="over-balls">
-                      ${(o.balls || []).map((b) => `<span class="over-ball ${getBallClass(b)}">${b}</span>`).join('')}
+                      ${(o.balls || [])
+                        .map((b) => {
+                          const value = typeof b === 'object' ? b.value : b;
+                          return `<span class="over-ball ${getBallClass(value)}">${value}</span>`;
+                        })
+                        .join('')}
                     </div>
                     <span class="over-total">${o.total || ''}</span>
                   </div>
@@ -1744,10 +1800,16 @@
               : '';
 
             const toss = match.toss || {};
-            const tossHtml =
-              toss.status && toss.status !== 'Not Started'
-                ? `<div class="toss-info">🏏 ${toss.status}</div>`
-                : '';
+            let tossHtml = '';
+            if (toss.status && toss.status !== 'unknown' && toss.status !== 'Not Started') {
+              tossHtml = `
+                <div class="toss-info">
+                  🏏 ${toss.status}
+                  ${toss.winner ? `<span class="winner">${toss.winner}</span>` : ''}
+                  ${toss.decision ? `chose to <span class="decision">${toss.decision}</span>` : ''}
+                </div>
+              `;
+            }
 
             return `
               <div class="match-card" data-match-id="${matchId}">
@@ -1761,22 +1823,24 @@
                   <div class="team">
                     <div class="team-logo">🏏</div>
                     <div class="team-name">${team1Name}</div>
-                    <div class="team-score ${scoreFlashClass}">${team1Score}</div>
+                    <div class="team-score ${scoreFlashClass}">${team1Display}</div>
                     <div class="team-overs">${team1Overs}</div>
                   </div>
                   <div class="vs">VS</div>
                   <div class="team">
                     <div class="team-logo">🏏</div>
                     <div class="team-name">${team2Name}</div>
-                    <div class="team-score ${scoreFlashClass}">${team2Score}</div>
+                    <div class="team-score ${scoreFlashClass}">${team2Display}</div>
                     <div class="team-overs">${team2Overs}</div>
                   </div>
                 </div>
 
                 ${reqHtml}
                 ${tossHtml}
+                ${oddsHtml}
                 ${batsmenHtml}
                 ${bowlerHtml}
+                ${ytbHtml}
                 ${oversHtml}
                 ${weatherHtml}
 
@@ -1954,17 +2018,14 @@ const ws = new WebSocket(wsUrl);
       // ⭐ AUTO-CONNECT & PING
       // ============================================================
 
-      // Auto-connect on page load
       setTimeout(connectWS, 500);
 
-      // Ping every 30 seconds
       setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
         }
       }, 30000);
 
-      // Cleanup on page unload
       window.addEventListener('beforeunload', () => {
         if (ws) ws.close(1000, 'Page unload');
         if (autoRefreshInterval) clearInterval(autoRefreshInterval);

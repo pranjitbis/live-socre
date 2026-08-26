@@ -124,7 +124,7 @@ class BrowserManager {
       const proxy = this.getNextProxy();
 
       const launchOptions = {
-        headless: process.env.NODE_ENV === 'production' ? true : false,
+        headless: process.env.HEADLESS === 'false' ? false : true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',

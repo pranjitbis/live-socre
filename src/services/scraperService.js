@@ -31,6 +31,13 @@ class ScraperService {
       finished: null,
     };
     
+    // Active promises for sharing concurrent scrape requests
+    this.activePromises = {
+      live: null,
+      upcoming: null,
+      finished: null,
+    };
+    
     this.lastScrapeResult = {
       live: null,
       upcoming: null,
@@ -47,8 +54,8 @@ class ScraperService {
     this.retryDelay = 1000;
     this.debugMode = true;
     
-    // Lock timeout (30 seconds)
-    this.lockTimeout = 30000;
+    // Lock timeout (120 seconds)
+    this.lockTimeout = 120000;
     
     // Cache TTL
     this.cacheTTL = 60;
@@ -74,11 +81,12 @@ class ScraperService {
     let released = false;
 
     for (const t of types) {
-      if (this.isScraping[t]) {
+      if (this.isScraping[t] || this.activePromises[t]) {
         const lockAge = this.scrapeLockTime[t] ? Date.now() - this.scrapeLockTime[t] : 0;
         logger.warn(`🔓 Force releasing ${t} scrape lock (age: ${Math.round(lockAge/1000)}s)`);
         this.isScraping[t] = false;
         this.scrapeLockTime[t] = null;
+        this.activePromises[t] = null;
         released = true;
       }
     }
@@ -112,6 +120,7 @@ class ScraperService {
           logger.warn(`⚠️ Stale ${type} lock detected (${Math.round(lockAge/1000)}s old), releasing...`);
           this.isScraping[type] = false;
           this.scrapeLockTime[type] = null;
+          this.activePromises[type] = null;
           released = true;
         }
       }
@@ -247,45 +256,11 @@ class ScraperService {
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        // Force release any stuck lock before each attempt
-        this.forceReleaseLock(type);
-        
-        // Ensure LiveScraper lock is released
-        if (this.crexScrapers && this.crexScrapers.live) {
+        // Ensure LiveScraper internal lock is released so it doesn't block the retry
+        if (this.crexScrapers && this.crexScrapers[type] && typeof this.crexScrapers[type].ensureLockReleased === 'function') {
           try {
-            if (typeof this.crexScrapers.live.ensureLockReleased === 'function') {
-              await this.crexScrapers.live.ensureLockReleased();
-            }
+            await this.crexScrapers[type].ensureLockReleased();
           } catch (e) {}
-        }
-
-        // Check if this type is already scraping
-        if (this.isScraping[type]) {
-          const lockAge = this.scrapeLockTime[type] ? Date.now() - this.scrapeLockTime[type] : 0;
-          
-          if (lockAge > this.lockTimeout) {
-            logger.warn(`⚠️ Stale ${type} lock detected (${Math.round(lockAge/1000)}s), force releasing...`);
-            this.isScraping[type] = false;
-            this.scrapeLockTime[type] = null;
-          } else {
-            logger.warn(`⚠️ ${type} scrape already in progress (${Math.round(lockAge/1000)}s), using cached data...`);
-            
-            const cached = await this.getCachedOrLastData(type);
-            if (cached) {
-              return cached;
-            }
-            
-            return {
-              success: false,
-              source: 'crex',
-              type: type,
-              total: 0,
-              data: [],
-              timestamp: new Date().toISOString(),
-              message: `${type} scrape already in progress (${Math.round(lockAge/1000)}s)`,
-              fromCache: false,
-            };
-          }
         }
 
         // Set lock with timestamp
@@ -294,7 +269,7 @@ class ScraperService {
 
         logger.info(`🔄 ${type} scrape attempt ${attempt}/${this.maxRetries}`);
 
-        // ⭐ Ensure SINGLE browser is ready
+        // Ensure SINGLE browser is ready
         try {
           await this.browserManager.launch();
         } catch (browserError) {
@@ -632,171 +607,150 @@ class ScraperService {
   // ⭐ MAIN SCRAPE METHODS
   // ============================================================
   async scrapeLive(forceRefresh = true) {
-    // Force release all locks before starting
-    this.forceReleaseLock('live');
-    
+    // If not force refresh, check if we already have cache
+    if (!forceRefresh) {
+      const cached = await this.getCachedOrLastData('live');
+      if (cached && cached.data && cached.data.length > 0) {
+        return cached;
+      }
+    }
+
     // Check if scrape is already in progress
-    if (this.isScraping.live && !forceRefresh) {
-      const lockAge = this.scrapeLockTime.live ? Date.now() - this.scrapeLockTime.live : 0;
-      logger.warn(`⚠️ Live scrape already in progress (${Math.round(lockAge/1000)}s)`);
-
-      const cached = await this.getCachedOrLastData('live');
-      if (cached) {
-        return cached;
-      }
-
-      return {
-        success: false,
-        source: 'crex',
-        type: 'live',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        message: `Live scrape already in progress (${Math.round(lockAge/1000)}s)`,
-        fromCache: false,
-      };
+    if (this.activePromises.live) {
+      logger.info(`♻️ Live scrape already in progress, reusing existing promise...`);
+      return this.activePromises.live;
     }
 
-    // Set lock with timestamp
-    this.isScraping.live = true;
-    this.scrapeLockTime.live = Date.now();
+    // Otherwise, create new promise and store it
+    this.activePromises.live = (async () => {
+      this.isScraping.live = true;
+      this.scrapeLockTime.live = Date.now();
 
-    try {
-      const result = await this.scrapeLiveWithRetry(forceRefresh);
-      
-      // Ensure lock is released
-      this.isScraping.live = false;
-      this.scrapeLockTime.live = null;
-      
-      if (result) {
-        logger.info(`📊 Live scrape result: success=${result.success}, total=${result.total || 0}, data=${result.data?.length || 0}`);
+      try {
+        const result = await this.scrapeLiveWithRetry(forceRefresh);
+        if (result) {
+          logger.info(`📊 Live scrape result: success=${result.success}, total=${result.total || 0}, data=${result.data?.length || 0}`);
+        }
+        return result;
+      } catch (error) {
+        logger.error('❌ Live scrape failed:', error.message);
+        
+        const cached = await this.getCachedOrLastData('live');
+        if (cached) {
+          return cached;
+        }
+        
+        return {
+          success: false,
+          source: 'crex',
+          type: 'live',
+          total: 0,
+          data: [],
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          message: 'No cached data available. Please try again in a few seconds.',
+          fromCache: false,
+        };
+      } finally {
+        this.isScraping.live = false;
+        this.scrapeLockTime.live = null;
+        this.activePromises.live = null;
       }
-      
-      return result;
-    } catch (error) {
-      this.isScraping.live = false;
-      this.scrapeLockTime.live = null;
-      logger.error('❌ Live scrape failed:', error.message);
-      
-      const cached = await this.getCachedOrLastData('live');
-      if (cached) {
-        return cached;
-      }
-      
-      return {
-        success: false,
-        source: 'crex',
-        type: 'live',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        message: 'No cached data available. Please try again in a few seconds.',
-        fromCache: false,
-      };
-    }
+    })();
+
+    return this.activePromises.live;
   }
 
   async scrapeUpcoming(forceRefresh = true) {
-    this.forceReleaseLock('upcoming');
-    
-    if (this.isScraping.upcoming && !forceRefresh) {
-      const lockAge = this.scrapeLockTime.upcoming ? Date.now() - this.scrapeLockTime.upcoming : 0;
-      logger.warn(`⚠️ Upcoming scrape already in progress (${Math.round(lockAge/1000)}s)`);
-
+    if (!forceRefresh) {
       const cached = await this.getCachedOrLastData('upcoming');
-      if (cached) return cached;
-
-      return {
-        success: false,
-        source: 'crex',
-        type: 'upcoming',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        message: `Upcoming scrape already in progress (${Math.round(lockAge/1000)}s)`,
-        fromCache: false,
-      };
+      if (cached && cached.data && cached.data.length > 0) {
+        return cached;
+      }
     }
 
-    this.isScraping.upcoming = true;
-    this.scrapeLockTime.upcoming = Date.now();
-
-    try {
-      const result = await this.scrapeUpcomingWithRetry(forceRefresh);
-      this.isScraping.upcoming = false;
-      this.scrapeLockTime.upcoming = null;
-      return result;
-    } catch (error) {
-      this.isScraping.upcoming = false;
-      this.scrapeLockTime.upcoming = null;
-      logger.error('❌ Upcoming scrape failed:', error.message);
-      
-      const cached = await this.getCachedOrLastData('upcoming');
-      if (cached) return cached;
-      
-      return {
-        success: false,
-        source: 'crex',
-        type: 'upcoming',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        fromCache: false,
-      };
+    if (this.activePromises.upcoming) {
+      logger.info(`♻️ Upcoming scrape already in progress, reusing existing promise...`);
+      return this.activePromises.upcoming;
     }
+
+    this.activePromises.upcoming = (async () => {
+      this.isScraping.upcoming = true;
+      this.scrapeLockTime.upcoming = Date.now();
+
+      try {
+        const result = await this.scrapeUpcomingWithRetry(forceRefresh);
+        return result;
+      } catch (error) {
+        logger.error('❌ Upcoming scrape failed:', error.message);
+        
+        const cached = await this.getCachedOrLastData('upcoming');
+        if (cached) return cached;
+        
+        return {
+          success: false,
+          source: 'crex',
+          type: 'upcoming',
+          total: 0,
+          data: [],
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          fromCache: false,
+        };
+      } finally {
+        this.isScraping.upcoming = false;
+        this.scrapeLockTime.upcoming = null;
+        this.activePromises.upcoming = null;
+      }
+    })();
+
+    return this.activePromises.upcoming;
   }
 
   async scrapeFinished(forceRefresh = true) {
-    this.forceReleaseLock('finished');
-    
-    if (this.isScraping.finished && !forceRefresh) {
-      const lockAge = this.scrapeLockTime.finished ? Date.now() - this.scrapeLockTime.finished : 0;
-      logger.warn(`⚠️ Finished scrape already in progress (${Math.round(lockAge/1000)}s)`);
-
+    if (!forceRefresh) {
       const cached = await this.getCachedOrLastData('finished');
-      if (cached) return cached;
-
-      return {
-        success: false,
-        source: 'crex',
-        type: 'finished',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        message: `Finished scrape already in progress (${Math.round(lockAge/1000)}s)`,
-        fromCache: false,
-      };
+      if (cached && cached.data && cached.data.length > 0) {
+        return cached;
+      }
     }
 
-    this.isScraping.finished = true;
-    this.scrapeLockTime.finished = Date.now();
-
-    try {
-      const result = await this.scrapeFinishedWithRetry(forceRefresh);
-      this.isScraping.finished = false;
-      this.scrapeLockTime.finished = null;
-      return result;
-    } catch (error) {
-      this.isScraping.finished = false;
-      this.scrapeLockTime.finished = null;
-      logger.error('❌ Finished scrape failed:', error.message);
-      
-      const cached = await this.getCachedOrLastData('finished');
-      if (cached) return cached;
-      
-      return {
-        success: false,
-        source: 'crex',
-        type: 'finished',
-        total: 0,
-        data: [],
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        fromCache: false,
-      };
+    if (this.activePromises.finished) {
+      logger.info(`♻️ Finished scrape already in progress, reusing existing promise...`);
+      return this.activePromises.finished;
     }
+
+    this.activePromises.finished = (async () => {
+      this.isScraping.finished = true;
+      this.scrapeLockTime.finished = Date.now();
+
+      try {
+        const result = await this.scrapeFinishedWithRetry(forceRefresh);
+        return result;
+      } catch (error) {
+        logger.error('❌ Finished scrape failed:', error.message);
+        
+        const cached = await this.getCachedOrLastData('finished');
+        if (cached) return cached;
+        
+        return {
+          success: false,
+          source: 'crex',
+          type: 'finished',
+          total: 0,
+          data: [],
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          fromCache: false,
+        };
+      } finally {
+        this.isScraping.finished = false;
+        this.scrapeLockTime.finished = null;
+        this.activePromises.finished = null;
+      }
+    })();
+
+    return this.activePromises.finished;
   }
 
   // ============================================================

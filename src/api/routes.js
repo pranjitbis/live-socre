@@ -355,7 +355,7 @@ router.get('/scrape/live', async (req, res) => {
       scrapeResult = await Promise.race([
         scraperService.scrapeLive(force),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Scrape timeout - try again in a few seconds')), 15000)
+          setTimeout(() => reject(new Error('Scrape timeout - try again in a few seconds')), 90000)
         )
       ]);
     } catch (error) {

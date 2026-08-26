@@ -301,11 +301,11 @@ class LiveScraperDebug extends BaseCrexScraper {
         report.nextSteps.push('Match Info tab not found - check if the page has a different structure');
       }
 
-      if (!matchDateFound) {
+      if (!report.matchDateFound) {
         report.nextSteps.push('match-date element not found - the Match Info page may not contain this element');
       }
 
-      if (!weekdaysFound) {
+      if (!report.weekdaysFound) {
         report.nextSteps.push('No weekdays found - the start time may be in a different format or location');
       }
 

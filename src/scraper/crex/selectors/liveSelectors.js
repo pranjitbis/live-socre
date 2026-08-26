@@ -42,4 +42,11 @@ module.exports = {
   VENUE: '.venue, .match-venue, .venue-name',
   TOSS: '.toss, .toss-info, .toss-detail',
   OFFICIALS: '.officials, .match-officials',
+
+  // Win Probability & Prediction & Odds
+  PROBABILITY: '.probability, .win-probability, [class*="probability"], [class*="win-prob"]',
+  PROJECTED_SCORE: '.projected-score, [class*="projected"]',
+  ODDS: '.odds, .session, .market-rates',
+  YET_TO_BAT: '.yet-to-bat, [class*="yet-to-bat"]',
+  SCORECARD_TABLE: '.scorecard, table, .batting-table',
 };

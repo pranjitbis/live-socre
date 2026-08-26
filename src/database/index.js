@@ -16,19 +16,23 @@ async function initDatabase() {
       return null;
     }
 
-    pool = mysql.createPool({
-      host: config.database.host,
-      user: config.database.user || 'root',
-      password: config.database.password || '',
-      database: config.database.database,
-      port: config.database.port || 3306,
-      connectionLimit: config.database.connectionLimit || 10,
-      waitForConnections: true,
-      queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
-      connectTimeout: 10000,
-    });
+    if (config.database.url) {
+      pool = mysql.createPool(config.database.url);
+    } else {
+      pool = mysql.createPool({
+        host: config.database.host,
+        user: config.database.user || 'root',
+        password: config.database.password || '',
+        database: config.database.database,
+        port: config.database.port || 3306,
+        connectionLimit: config.database.connectionLimit || 10,
+        waitForConnections: true,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0,
+        connectTimeout: 10000,
+      });
+    }
 
     // Test connection
     const connection = await pool.getConnection();

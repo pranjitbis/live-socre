@@ -1,0 +1,156 @@
+[
+  {
+    "text": "CREX",
+    "href": "/",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "navbar-brand",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Home(current)",
+    "href": "/",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Series",
+    "href": "/series",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Teams",
+    "href": "/team",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Fixtures",
+    "href": "/schedule",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "🏏 Stats Corner",
+    "href": "/stats/most-runs-in-wt20-world-cup-2026?m=0&sid=1&sn=1TG&vn=-1&tm=-1&fmt=2&isT=7&yr=2026",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Rankings",
+    "href": "/rankings/men/teams",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "News",
+    "href": "/news",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "nav-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Match info",
+    "href": "",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "tab-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Summary",
+    "href": "",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "tab-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Scorecard",
+    "href": "",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "tab-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Discussions",
+    "href": "",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "tab-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "Points Table",
+    "href": "",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "tab-link",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  },
+  {
+    "text": "WTC Points Table 2025-27",
+    "href": "/series/world-test-championship-2025-27-1QK/points-table",
+    "dataRoute": "",
+    "onclick": "",
+    "ariaLabel": "",
+    "className": "",
+    "dataTestId": "",
+    "role": "",
+    "id": ""
+  }
+]
