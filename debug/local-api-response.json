@@ -2,58 +2,58 @@
   "success": true,
   "source": "crex",
   "type": "live",
-  "total": 4,
+  "total": 1,
   "data": [
     {
-      "match_id": "live_1787762909253_n8enoi",
-      "match_url": "https://crex.com/cricket-live-score/kk-vs-tgc-qualifier-2nd-match-tamil-nadu-premier-league-2026-match-updates-12ZP",
+      "match_id": "aca-vs-hyk-23rd-match-top-end-t20-series-2026-match-updates-13KM",
+      "match_url": "https://crex.com/cricket-live-score/aca-vs-hyk-23rd-match-top-end-t20-series-2026-match-updates-13KM",
       "series": {
-        "id": "series_1787762909253",
-        "name": "TNPL 2026",
-        "short_name": "",
+        "id": "series_1787896494578",
+        "name": "ACA vs HYK,  23rd T20, Top End T20 2026 summary",
+        "short_name": "ACA vs HYK,  23rd T2",
         "season": "2026"
       },
       "match": {
-        "number": null,
-        "format": null,
-        "status": "Live",
-        "start_time": null,
-        "current_innings": null,
-        "current_ball": null
+        "number": "23rd T20",
+        "format": "T20",
+        "status": "ACA won by 7 wicketsMatch Won",
+        "start_time": "2026-08-28T09:00:00+05:30",
+        "current_innings": 2,
+        "current_ball": "11.5"
       },
       "venue": {
-        "id": "venue_1787762909253",
+        "id": "venue_1787896494578",
         "name": null
       },
       "teams": {
         "home": {
-          "id": "team_kk",
-          "name": "KK",
-          "short_name": "KK",
-          "logo": "https://cricketvectors.akamaized.net/Teams/2U.png"
+          "id": "team_ac",
+          "name": "ACA",
+          "short_name": "HYK",
+          "logo": "https://cricketvectors.akamaized.net/Teams/1KP.png"
         },
         "away": {
-          "id": "team_tgc",
-          "name": "TGC",
-          "short_name": "TGC",
-          "logo": "https://cricketvectors.akamaized.net/Teams/R0.png"
+          "id": "team_hyk",
+          "name": "HYK",
+          "short_name": "ACA",
+          "logo": "https://cricketvectors.akamaized.net/Teams/14T.png"
         }
       },
       "scoreboard": {
         "batting_team": {
-          "name": "KK",
-          "score": "183",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
+          "name": "ACA",
+          "score": "96/3",
+          "runs": 96,
+          "wickets": 3,
+          "overs": "11.5",
           "balls": null
         },
         "bowling_team": {
-          "name": "TGC",
-          "score": "80",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
+          "name": "HYK",
+          "score": "92/10",
+          "runs": 92,
+          "wickets": 10,
+          "overs": "14.4",
           "balls": null
         },
         "target": null,
@@ -61,21 +61,197 @@
         "required_balls": null,
         "crr": null,
         "rrr": null,
-        "current_ball": null
+        "current_ball": "11.5",
+        "full_scorecard": null
       },
-      "current_batsmen": [],
+      "current_batsmen": [
+        {
+          "name": "H Hunt",
+          "runs": 10,
+          "balls": 5,
+          "is_striker": true
+        },
+        {
+          "name": "H Nielsen",
+          "runs": 42,
+          "balls": 34,
+          "is_striker": false
+        }
+      ],
+      "yet_to_bat": [],
       "current_bowler": {
-        "name": "",
-        "overs": "",
-        "runs": null,
-        "wickets": null
+        "name": "T Singh",
+        "overs": "0.5",
+        "runs": 10,
+        "wickets": 0
       },
-      "overs": [],
+      "last_ball": {
+        "ball": null,
+        "value": "W",
+        "event": "wicket",
+        "isWicket": true
+      },
+      "overs": [
+        {
+          "over": "9",
+          "balls": [
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            }
+          ],
+          "total": "4"
+        },
+        {
+          "over": "10",
+          "balls": [
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "2",
+              "event": "two runs",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            }
+          ],
+          "total": "9"
+        },
+        {
+          "over": "11",
+          "balls": [
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "W",
+              "event": "wicket",
+              "isWicket": true
+            },
+            {
+              "value": "1nb",
+              "event": "no-ball",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            }
+          ],
+          "total": "13"
+        },
+        {
+          "over": "12",
+          "balls": [
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            },
+            {
+              "value": "0",
+              "event": "dot ball",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "1",
+              "event": "single",
+              "isWicket": false
+            },
+            {
+              "value": "4",
+              "event": "four",
+              "isWicket": false
+            }
+          ],
+          "total": "10"
+        }
+      ],
       "commentary": [],
       "prediction": {
         "home_probability": null,
         "away_probability": null,
+        "win_probability_text": null,
+        "favorite": null,
         "projected_scores": []
+      },
+      "odds": {
+        "favorite": null,
+        "home_win_percentage": null,
+        "away_win_percentage": null,
+        "win_probability": null,
+        "market_rates": null,
+        "betting_summary": null
       },
       "toss": {
         "status": "unknown",
@@ -84,258 +260,14 @@
       },
       "result": null,
       "weather": null,
-      "countdown": null
-    },
-    {
-      "match_id": "live_1787762910851_h57lxf",
-      "match_url": "https://crex.com/cricket-live-score/ar-vs-kbt-14th-match-kerala-cricket-league-t20-2026-match-updates-13G8",
-      "series": {
-        "id": "series_1787762910851",
-        "name": "KCL T20 2026",
-        "short_name": "",
-        "season": "2026"
-      },
-      "match": {
-        "number": null,
-        "format": null,
-        "status": "Live",
-        "start_time": null,
-        "current_innings": null,
-        "current_ball": null
-      },
-      "venue": {
-        "id": "venue_1787762910851",
-        "name": null
-      },
-      "teams": {
-        "home": {
-          "id": "team_ar",
-          "name": "AR",
-          "short_name": "AR",
-          "logo": "https://cricketvectors.akamaized.net/Teams/XW.png"
-        },
-        "away": {
-          "id": "team_kbt",
-          "name": "KBT",
-          "short_name": "KBT",
-          "logo": "https://cricketvectors.akamaized.net/Teams/XT.png"
-        }
-      },
-      "scoreboard": {
-        "batting_team": {
-          "name": "AR",
-          "score": "125",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "bowling_team": {
-          "name": "KBT",
-          "score": "1",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "target": null,
-        "required_runs": null,
-        "required_balls": null,
-        "crr": null,
-        "rrr": null,
-        "current_ball": null
-      },
-      "current_batsmen": [],
-      "current_bowler": {
-        "name": "",
-        "overs": "",
-        "runs": null,
-        "wickets": null
-      },
-      "overs": [],
-      "commentary": [],
-      "prediction": {
-        "home_probability": null,
-        "away_probability": null,
-        "projected_scores": []
-      },
-      "toss": {
-        "status": "unknown",
-        "winner": null,
-        "decision": null
-      },
-      "result": null,
-      "weather": null,
-      "countdown": null
-    },
-    {
-      "match_id": "live_1787762919352_jci7yw",
-      "match_url": "https://crex.com/cricket-live-score/kas-vs-noi-22nd-match-uttar-pradesh-t20-league-2026-match-updates-133H",
-      "series": {
-        "id": "series_1787762919352",
-        "name": "UP T20 2026",
-        "short_name": "",
-        "season": "2026"
-      },
-      "match": {
-        "number": null,
-        "format": null,
-        "status": "Live",
-        "start_time": null,
-        "current_innings": null,
-        "current_ball": null
-      },
-      "venue": {
-        "id": "venue_1787762919352",
-        "name": null
-      },
-      "teams": {
-        "home": {
-          "id": "team_kas",
-          "name": "KAS",
-          "short_name": "KAS",
-          "logo": "https://cricketvectors.akamaized.net/Teams/SK.png"
-        },
-        "away": {
-          "id": "team_noi",
-          "name": "NOI",
-          "short_name": "NOI",
-          "logo": "https://cricketvectors.akamaized.net/Teams/SJ.png"
-        }
-      },
-      "scoreboard": {
-        "batting_team": {
-          "name": "KAS",
-          "score": "",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "bowling_team": {
-          "name": "NOI",
-          "score": "25",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "target": null,
-        "required_runs": null,
-        "required_balls": null,
-        "crr": null,
-        "rrr": null,
-        "current_ball": null
-      },
-      "current_batsmen": [],
-      "current_bowler": {
-        "name": "",
-        "overs": "",
-        "runs": null,
-        "wickets": null
-      },
-      "overs": [],
-      "commentary": [],
-      "prediction": {
-        "home_probability": null,
-        "away_probability": null,
-        "projected_scores": []
-      },
-      "toss": {
-        "status": "unknown",
-        "winner": null,
-        "decision": null
-      },
-      "result": null,
-      "weather": null,
-      "countdown": null
-    },
-    {
-      "match_id": "live_1787762908733_glmrft",
-      "match_url": "https://crex.com/cricket-live-score/odw-vs-pd-eliminator-1st-match-delhi-premier-t20-league-2026-match-updates-13CA",
-      "series": {
-        "id": "series_1787762908733",
-        "name": "DPL 2026",
-        "short_name": "",
-        "season": "2026"
-      },
-      "match": {
-        "number": null,
-        "format": null,
-        "status": "Live",
-        "start_time": null,
-        "current_innings": null,
-        "current_ball": null
-      },
-      "venue": {
-        "id": "venue_1787762908733",
-        "name": null
-      },
-      "teams": {
-        "home": {
-          "id": "team_odw",
-          "name": "ODW",
-          "short_name": "ODW",
-          "logo": "https://cricketvectors.akamaized.net/Teams/1AD.png"
-        },
-        "away": {
-          "id": "team_pd",
-          "name": "PD",
-          "short_name": "PD",
-          "logo": "https://cricketvectors.akamaized.net/Teams/X7.png"
-        }
-      },
-      "scoreboard": {
-        "batting_team": {
-          "name": "ODW",
-          "score": "",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "bowling_team": {
-          "name": "PD",
-          "score": "84",
-          "runs": null,
-          "wickets": null,
-          "overs": "",
-          "balls": null
-        },
-        "target": null,
-        "required_runs": null,
-        "required_balls": null,
-        "crr": null,
-        "rrr": null,
-        "current_ball": null
-      },
-      "current_batsmen": [],
-      "current_bowler": {
-        "name": "",
-        "overs": "",
-        "runs": null,
-        "wickets": null
-      },
-      "overs": [],
-      "commentary": [],
-      "prediction": {
-        "home_probability": null,
-        "away_probability": null,
-        "projected_scores": []
-      },
-      "toss": {
-        "status": "unknown",
-        "winner": null,
-        "decision": null
-      },
-      "result": null,
-      "weather": null,
-      "countdown": null
+      "countdown": null,
+      "_lastUpdated": "2026-08-28T05:54:55.929Z",
+      "_updateCount": 1
     }
   ],
-  "timestamp": "2026-08-26T16:48:42.973Z",
-  "requestId": "1787762892572_g53sib",
+  "timestamp": "2026-08-28T05:54:57.199Z",
+  "requestId": "1787896482102_8ur1qw",
   "fromCache": false,
   "forceRefresh": true,
-  "duration": 30436
+  "duration": 15142
 }

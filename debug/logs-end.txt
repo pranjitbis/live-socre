@@ -1,0 +1,1 @@
+{"level":"warn","message":"⚠️ Database initialization failed: getaddrinfo ENOTFOUND mysql.railway.internal","service":"cricket-scraper","timestamp":"2026-08-28 11:24:37"}

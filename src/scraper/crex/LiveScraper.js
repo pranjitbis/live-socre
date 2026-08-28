@@ -1747,16 +1747,17 @@ class LiveScraper extends BaseCrexScraper {
     }
   }
 
-  // ⭐ FIXED: Extract venue strictly from dedicated venue elements
+  // ⭐ FIXED: Extract venue strictly from dedicated venue elements & meta fallback
   async extractVenue(page) {
     try {
       const venue = await page.evaluate(() => {
         // 1. Check dedicated venue selectors
         const selectors = [
+          'app-match-info .venue', 'app-match-info .venue-name', 'app-match-info .stadium',
           '.content-wrap.venue-detail .venue', '.venue-detail .venue', '.match-venue .venue',
           '.venue', '.venue-name', '.stadium-name', '.stadium', 
           '.match-venue', '.location', '.match-location',
-          '.venue-info', '.stadium-info'
+          '.venue-info', '.stadium-info', '.info-item:has(.venue)'
         ];
         
         for (const selector of selectors) {
@@ -1774,7 +1775,7 @@ class LiveScraper extends BaseCrexScraper {
         }
 
         // 2. Check match-number or header elements containing ground/stadium names
-        const headerEls = document.querySelectorAll('.match-number, .match-desc, .match-info .match-desc, .match-header, .info-card');
+        const headerEls = document.querySelectorAll('.match-number, .match-desc, .match-info .match-desc, .match-header, .info-card, .info-item, .series-venue');
         for (const el of headerEls) {
           const text = el.textContent.trim();
           const groundMatch = text.match(/([A-Z][a-zA-Z0-9\s,.-]+(?:Cricket Ground|Ground|Stadium|Oval|Park|Arena|Complex))/i);
@@ -1785,7 +1786,16 @@ class LiveScraper extends BaseCrexScraper {
             }
           }
         }
-        
+
+        // 3. Fallback: Parse document title or meta description
+        const docTitle = document.title || '';
+        const metaDesc = document.querySelector('meta[name="description"], meta[property="og:description"]')?.content || '';
+        const combined = `${docTitle} | ${metaDesc}`;
+        const titleVenueMatch = combined.match(/(?:at|in)\s+([A-Z][a-zA-Z0-9\s,.-]+(?:Cricket Ground|Ground|Stadium|Oval|Park|Arena|Complex|Darwin|Sydney|Melbourne|London|Mumbai|Delhi|Lahore|Karachi|Dubai|Sharjah|Abu Dhabi))/i);
+        if (titleVenueMatch) {
+          return titleVenueMatch[1].trim();
+        }
+
         return null;
       });
 
@@ -1879,32 +1889,48 @@ class LiveScraper extends BaseCrexScraper {
     }
   }
 
-  // ⭐ FIXED: Get current ball from the last over
+  // ⭐ FIXED: Get current ball from live card / over container
   async extractCurrentBall(page) {
     try {
       const currentBall = await page.evaluate(() => {
-        const scoreboard = document.querySelector('.scoreboard, .team-innig, .overs-timeline');
-        if (!scoreboard) return null;
-
         const ballSelectors = [
           '.current-ball', '.ball-number', '.over-ball.current',
           '.ball.current', '.highlight-ball', '.active-ball'
         ];
         
         for (const selector of ballSelectors) {
-          const el = scoreboard.querySelector(selector);
+          const el = document.querySelector(selector);
           if (el) {
             const text = el.textContent.trim();
-            if (text) {
+            if (text && (/^\d+\.[0-6]$/.test(text) || /^\d+b?$/.test(text))) {
               return text;
             }
           }
         }
 
-        const scoreText = scoreboard.textContent || '';
-        const overMatch = scoreText.match(/\((\d+\.\d+)\s*ov\)/i) || scoreText.match(/(\d+\.\d+)\s*overs/i);
-        if (overMatch) {
-          return overMatch[1];
+        // Look inside live score card / team inning for current overs display e.g. "86-3 11.0" or "(11.0)"
+        const liveScoreCard = document.querySelector('.live-score-card, .scoreboard, .match-header');
+        if (liveScoreCard) {
+          const battingInning = liveScoreCard.querySelector('.team-inning');
+          if (battingInning) {
+            const runsEl = battingInning.querySelector('.runs, .team-score');
+            if (runsEl) {
+              const text = runsEl.textContent.trim();
+              const overMatch = text.match(/\((\d+\.\d+)\)/) || text.match(/(\d+\.[0-6])\b/);
+              if (overMatch) {
+                return overMatch[1];
+              }
+            }
+          }
+        }
+
+        const scoreboard = document.querySelector('.scoreboard, .team-innig, .overs-timeline');
+        if (scoreboard) {
+          const scoreText = scoreboard.textContent || '';
+          const overMatch = scoreText.match(/\((\d+\.\d+)\s*ov\)/i) || scoreText.match(/(\d+\.\d+)\s*overs/i) || scoreText.match(/(\d+\.[0-6])/);
+          if (overMatch) {
+            return overMatch[1];
+          }
         }
 
         return null;
@@ -1913,7 +1939,7 @@ class LiveScraper extends BaseCrexScraper {
       if (!currentBall) return null;
       const cleanBall = currentBall.trim();
 
-      if (/^\d+\.[1-6]$/.test(cleanBall)) {
+      if (/^\d+\.[0-6]$/.test(cleanBall)) {
         return cleanBall;
       }
 
@@ -1935,13 +1961,13 @@ class LiveScraper extends BaseCrexScraper {
   async extractCurrentInnings(page) {
     try {
       const innings = await page.evaluate(() => {
-        const container = document.querySelector('.scoreboard, .match-info, .team-result, .live-data');
+        const container = document.querySelector('.live-score-card, .scoreboard, .match-info, .team-result, .live-data');
         if (container) {
           const text = container.textContent || '';
           const match = text.match(/(\d+)(?:st|nd|rd|th)?\s*Innings?/i);
           if (match) {
             const num = parseInt(match[1]);
-            if (num === 1 || num === 2 || num === 3 || num === 4) {
+            if (num >= 1 && num <= 4) {
               return num;
             }
           }
@@ -1959,16 +1985,26 @@ class LiveScraper extends BaseCrexScraper {
             const match = text.match(/(\d+)/);
             if (match) {
               const num = parseInt(match[1]);
-              if (num === 1 || num === 2 || num === 3 || num === 4) {
+              if (num >= 1 && num <= 4) {
                 return num;
               }
             }
           }
         }
 
-        const bodyText = document.body.textContent || '';
-        if (bodyText.includes('need') && bodyText.includes('runs in') && bodyText.includes('balls')) {
+        const bodyText = document.body ? document.body.textContent : '';
+        if (/need\s+\d+\s+runs/i.test(bodyText) || /runs?\s+in\s+\d+\s+balls?/i.test(bodyText) || /target/i.test(bodyText) || /rrr\s*:/i.test(bodyText)) {
           return 2;
+        }
+
+        // Check if both team innings have scores rendered in header/card
+        const inningsEls = document.querySelectorAll('.live-score-card .team-inning, .team-inning');
+        if (inningsEls.length >= 2) {
+          const score1 = inningsEls[0].querySelector('.runs, .team-score')?.textContent.trim();
+          const score2 = inningsEls[1].querySelector('.runs, .team-score')?.textContent.trim();
+          if (score1 && score2) {
+            return 2;
+          }
         }
 
         return null;
@@ -1985,7 +2021,22 @@ class LiveScraper extends BaseCrexScraper {
   async extractStartTime(page) {
     try {
       const startTime = await page.evaluate(() => {
+        // 1. Check JSON-LD
+        const jsonLdEls = document.querySelectorAll('script[type="application/ld+json"]');
+        for (const el of jsonLdEls) {
+          try {
+            const data = JSON.parse(el.textContent);
+            if (data && data.startDate) return data.startDate;
+            if (Array.isArray(data)) {
+              const matchEvent = data.find(item => item.startDate);
+              if (matchEvent) return matchEvent.startDate;
+            }
+          } catch (e) {}
+        }
+
+        // 2. Dedicated selectors
         const timeSelectors = [
+          'app-match-info .start-time', 'app-match-info .match-time',
           '.start-time', '.match-time', '.time', 
           '.match-start-time', '.schedule-time',
           'time[datetime]', '[datetime]'
@@ -2005,8 +2056,10 @@ class LiveScraper extends BaseCrexScraper {
           }
         }
 
-        const bodyText = document.body.textContent;
-        const timeMatch = bodyText.match(/Start\s*[::]\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/i);
+        // 3. Document body / text fallback
+        const bodyText = document.body ? document.body.textContent : '';
+        const timeMatch = bodyText.match(/Start\s*(?:Time)?\s*[::]\s*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm|GMT|IST|UTC)?)/i) ||
+                          bodyText.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\s*(?:\([^)]+\)|[A-Z]{3})?)/i);
         if (timeMatch) {
           return timeMatch[1].trim();
         }
@@ -2861,6 +2914,38 @@ class LiveScraper extends BaseCrexScraper {
       }
       if (match.match && !match.match.current_ball && match.last_ball.ball) {
         match.match.current_ball = match.last_ball.ball;
+      }
+    }
+
+    // 0c. Current Innings & Current Ball Auto-Inference Fallback
+    if (match.match) {
+      if (match.match.current_innings === null) {
+        if (match.scoreboard) {
+          if (match.scoreboard.required_runs !== null || match.scoreboard.rrr !== null || match.scoreboard.target !== null || (match.scoreboard.bowling_team && (match.scoreboard.bowling_team.runs !== null || match.scoreboard.bowling_team.score))) {
+            match.match.current_innings = 2;
+          } else if (match.scoreboard.batting_team && (match.scoreboard.batting_team.runs !== null || match.scoreboard.batting_team.score)) {
+            match.match.current_innings = 1;
+          }
+        }
+      }
+    }
+
+    if (match.scoreboard && !match.scoreboard.current_ball) {
+      if (match.scoreboard.batting_team && match.scoreboard.batting_team.overs) {
+        const ov = String(match.scoreboard.batting_team.overs).replace(/[()]/g, '').trim();
+        if (/^\d+\.[0-6]$/.test(ov) || /^\d+b?$/.test(ov)) {
+          match.scoreboard.current_ball = ov;
+          if (match.match) {
+            match.match.current_ball = ov;
+          }
+        }
+      }
+    }
+
+    // 0d. Live Status Equation Fallback Synthesis
+    if (match.match && match.scoreboard) {
+      if ((!match.match.status || match.match.status === 'Live') && match.scoreboard.required_runs !== null && match.scoreboard.required_balls !== null && match.scoreboard.batting_team?.name) {
+        match.match.status = `${match.scoreboard.batting_team.name} need ${match.scoreboard.required_runs} runs in ${match.scoreboard.required_balls} balls`;
       }
     }
 
